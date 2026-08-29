@@ -42,3 +42,65 @@ add_custom_target(starfox_switch_nro ALL DEPENDS "${switch_nro}")
 install(FILES "${switch_nro}" DESTINATION switch/starfox-enhanced)
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/localization/"
     DESTINATION switch/starfox-enhanced/localization)
+
+# ------------------------------------------------------------
+# SDL3 / EGL diagnostic NRO
+# ------------------------------------------------------------
+
+add_executable(
+    starfox_switch_sdl_probe
+    EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/sdl_probe.cpp)
+
+target_compile_definitions(
+    starfox_switch_sdl_probe
+    PRIVATE
+        __SWITCH__=1)
+
+target_link_libraries(
+    starfox_switch_sdl_probe
+    PRIVATE
+        SDL3::SDL3)
+
+set(
+    switch_sdl_probe_nacp
+    "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch_sdl_probe.nacp")
+
+set(
+    switch_sdl_probe_nro
+    "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch_sdl_probe.nro")
+
+add_custom_command(
+    OUTPUT
+        "${switch_sdl_probe_nacp}"
+
+    COMMAND
+        "${STARFOX_NACPTOOL}"
+        --create
+        "Star Fox SDL Probe"
+        "Star Fox Enhanced contributors"
+        "${PROJECT_VERSION}"
+        "${switch_sdl_probe_nacp}"
+
+    VERBATIM)
+
+add_custom_command(
+    OUTPUT
+        "${switch_sdl_probe_nro}"
+
+    COMMAND
+        "${STARFOX_ELF2NRO}"
+        "$<TARGET_FILE:starfox_switch_sdl_probe>"
+        "${switch_sdl_probe_nro}"
+        "--nacp=${switch_sdl_probe_nacp}"
+
+    DEPENDS
+        starfox_switch_sdl_probe
+        "${switch_sdl_probe_nacp}"
+
+    VERBATIM)
+
+add_custom_target(
+    starfox_switch_sdl_probe_nro
+    DEPENDS
+        "${switch_sdl_probe_nro}")

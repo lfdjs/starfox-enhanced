@@ -24,10 +24,10 @@ struct RuntimePlatformProfile {
 
 [[nodiscard]] constexpr RuntimePlatformProfile switch_runtime_profile() {
     return {
-        "TITLEMAP",
+        "BOOT",
         simulation::TimingMode::unlocked_20_fps,
         60U,
-        simulation::DisplayMode::standard_4_3,
+        simulation::DisplayMode::widescreen_16_9,
         true,
         false,
     };

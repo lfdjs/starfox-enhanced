@@ -1,0 +1,114 @@
+Change Dir: '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+
+Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile -j8 starfox_switch_nro
+/usr/bin/cmake -S/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced -B/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/gmake  -f CMakeFiles/Makefile2 starfox_switch_nro
+gmake[1]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/cmake -S/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced -B/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/cmake -E cmake_progress_start /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles 45
+/usr/bin/gmake  -f CMakeFiles/Makefile2 ports/switch/CMakeFiles/starfox_switch_nro.dir/all
+gmake[2]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f CMakeFiles/retro_cpu_core.dir/build.make CMakeFiles/retro_cpu_core.dir/depend
+/usr/bin/gmake  -f CMakeFiles/snes_spc_core.dir/build.make CMakeFiles/snes_spc_core.dir/depend
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/retro_cpu_core.dir/DependInfo.cmake "--color="
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/DependInfo.cmake "--color="
+Dependencies file "CMakeFiles/retro_cpu_core.dir/_deps/retro_cpu-src/cpu.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/retro_cpu_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/SNES_SPC.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/SNES_SPC_misc.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/SNES_SPC_state.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/SPC_DSP.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/SPC_Filter.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/snes_spc_core.dir/_deps/snes_spc-src/snes_spc/spc.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/snes_spc_core.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target snes_spc_core
+Consolidate compiler generated dependencies of target retro_cpu_core
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f CMakeFiles/retro_cpu_core.dir/build.make CMakeFiles/retro_cpu_core.dir/build
+/usr/bin/gmake  -f CMakeFiles/snes_spc_core.dir/build.make CMakeFiles/snes_spc_core.dir/build
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Nada a ser feito para 'CMakeFiles/snes_spc_core.dir/build'.
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Nada a ser feito para 'CMakeFiles/retro_cpu_core.dir/build'.
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[ 13%] Built target retro_cpu_core
+[ 20%] Built target snes_spc_core
+/usr/bin/gmake  -f CMakeFiles/retro_cpu_65816.dir/build.make CMakeFiles/retro_cpu_65816.dir/depend
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/retro_cpu_65816.dir/DependInfo.cmake "--color="
+Dependencies file "CMakeFiles/retro_cpu_65816.dir/_deps/retro_cpu-src/cpu/65816/cpu_65c816.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/retro_cpu_65816.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target retro_cpu_65816
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f CMakeFiles/retro_cpu_65816.dir/build.make CMakeFiles/retro_cpu_65816.dir/build
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Nada a ser feito para 'CMakeFiles/retro_cpu_65816.dir/build'.
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[ 24%] Built target retro_cpu_65816
+/usr/bin/gmake  -f CMakeFiles/starfox_core.dir/build.make CMakeFiles/starfox_core.dir/depend
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/DependInfo.cmake "--color="
+Dependencies file "CMakeFiles/starfox_core.dir/src/assets/bps.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/assets/decrunch.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/assets/rom.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/assets/runtime_bundle.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/assets/shape_decoder.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/audio/spc700_audio.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/localization/dialogue_catalog.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/localization/language.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/background_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/dust_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/framebuffer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/palette.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/particle_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/presentation_history.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/scaled_text_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/software_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/render/sprite_renderer.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/dust_system.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/game_simulation.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/map_vm.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/math.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/object_pool.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/particle_system.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/path_vm.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/prng.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/strategy_scheduler.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/simulation/wdc65816.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/starfox_core.dir/src/timing/fixed_step.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles/starfox_core.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target starfox_core
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f CMakeFiles/starfox_core.dir/build.make CMakeFiles/starfox_core.dir/build
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Nada a ser feito para 'CMakeFiles/starfox_core.dir/build'.
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[ 88%] Built target starfox_core
+/usr/bin/gmake  -f ports/switch/CMakeFiles/starfox_switch.dir/build.make ports/switch/CMakeFiles/starfox_switch.dir/depend
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/ports/switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/CMakeFiles/starfox_switch.dir/DependInfo.cmake "--color="
+Dependencies file "ports/switch/CMakeFiles/starfox_switch.dir/__/__/src/app/runtime_input.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/CMakeFiles/starfox_switch.dir/compiler_depend.internal".
+Dependencies file "ports/switch/CMakeFiles/starfox_switch.dir/__/__/src/app/starfox_pc.o.d" is newer than depends file "/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/CMakeFiles/starfox_switch.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target starfox_switch
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f ports/switch/CMakeFiles/starfox_switch.dir/build.make ports/switch/CMakeFiles/starfox_switch.dir/build
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+gmake[3]: Nada a ser feito para 'ports/switch/CMakeFiles/starfox_switch.dir/build'.
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[ 95%] Built target starfox_switch
+/usr/bin/gmake  -f ports/switch/CMakeFiles/starfox_switch_nro.dir/build.make ports/switch/CMakeFiles/starfox_switch_nro.dir/depend
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/ports/switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/CMakeFiles/starfox_switch_nro.dir/DependInfo.cmake "--color="
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/gmake  -f ports/switch/CMakeFiles/starfox_switch_nro.dir/build.make ports/switch/CMakeFiles/starfox_switch_nro.dir/build
+gmake[3]: Entrando no diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[ 97%] Generating starfox_switch.nacp
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch && /opt/devkitpro/tools/bin/nacptool --create "Star Fox Enhanced" "Star Fox Enhanced contributors" 0.1.0 /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/starfox_switch.nacp
+[100%] Generating starfox_switch.nro
+cd /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch && /opt/devkitpro/tools/bin/elf2nro /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/starfox_switch.elf /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/starfox_switch.nro --nacp=/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/ports/switch/starfox_switch.nacp
+gmake[3]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+[100%] Built target starfox_switch_nro
+gmake[2]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+/usr/bin/cmake -E cmake_progress_start /home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch/CMakeFiles 0
+gmake[1]: Saindo do diretório '/home/luizsilva/Documentos/projetos_recompilacao_estatica/starfox-enhanced/build-switch'
+

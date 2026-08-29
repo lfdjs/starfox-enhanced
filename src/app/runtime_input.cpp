@@ -9,6 +9,10 @@
 #include <sstream>
 #include <vector>
 
+#if defined(STARFOX_SWITCH_RUNTIME)
+#include <switch.h>
+#endif
+
 namespace starfox::app {
 namespace {
 
@@ -67,6 +71,100 @@ constexpr std::array<GamepadBinding, InputBindings::action_count>
     }};
 
 constexpr std::int16_t kAxisThreshold = 16'000;
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+input::ButtonMask sample_switch_native_buttons() noexcept {
+    static PadState pad{};
+    static bool initialized{};
+
+    if (!initialized) {
+        padConfigureInput(
+            1,
+            HidNpadStyleSet_NpadStandard);
+
+        padInitializeDefault(
+            &pad);
+
+        initialized = true;
+    }
+
+    padUpdate(
+        &pad);
+
+    const auto held =
+        padGetButtons(
+            &pad);
+
+    input::ButtonMask result{};
+
+    const auto add =
+        [&result, held](
+            u64 physical,
+            input::ButtonMask logical) {
+
+            if ((held & physical) != 0U) {
+                result =
+                    static_cast<input::ButtonMask>(
+                        result | logical);
+            }
+        };
+
+    // Preserve the physical SNES-style diamond layout.
+    add(HidNpadButton_B, input::b);
+    add(HidNpadButton_Y, input::y);
+
+    add(HidNpadButton_Minus, input::select);
+    add(HidNpadButton_Plus, input::start);
+
+    add(HidNpadButton_Up, input::up);
+    add(HidNpadButton_Down, input::down);
+    add(HidNpadButton_Left, input::left);
+    add(HidNpadButton_Right, input::right);
+
+    add(HidNpadButton_A, input::a);
+    add(HidNpadButton_X, input::x);
+
+    add(HidNpadButton_L, input::left_shoulder);
+    add(HidNpadButton_R, input::right_shoulder);
+
+    // Star Fox also accepts the left analogue stick as D-pad input.
+    const auto stick =
+        padGetStickPos(
+            &pad,
+            0);
+
+    constexpr int threshold =
+        16'000;
+
+    if (stick.y >= threshold) {
+        result =
+            static_cast<input::ButtonMask>(
+                result | input::up);
+    }
+
+    if (stick.y <= -threshold) {
+        result =
+            static_cast<input::ButtonMask>(
+                result | input::down);
+    }
+
+    if (stick.x <= -threshold) {
+        result =
+            static_cast<input::ButtonMask>(
+                result | input::left);
+    }
+
+    if (stick.x >= threshold) {
+        result =
+            static_cast<input::ButtonMask>(
+                result | input::right);
+    }
+
+    return result;
+}
+
+#endif
 
 std::string lower_ascii(std::string_view text) {
     std::string result{text};
@@ -252,14 +350,37 @@ InputBindings::InputBindings() {
 }
 
 input::ButtonMask InputBindings::sample(SDL_Gamepad* gamepad) const noexcept {
-    const auto* keys = SDL_GetKeyboardState(nullptr);
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+    // libnx is the authoritative console input source. Keep SDL gamepad
+    // sampling ORed in as a compatibility path for emulators and future
+    // SDL backend improvements.
+    auto result =
+        sample_switch_native_buttons();
+
+#else
+
+    const auto* keys =
+        SDL_GetKeyboardState(nullptr);
+
     input::ButtonMask result{};
-    for (std::size_t action = 0; action < action_count; ++action) {
+
+    for (std::size_t action = 0;
+         action < action_count;
+         ++action) {
+
         add_keyboard_button(
-            result, keys, keyboard_[action], kActionButtons[action]);
+            result,
+            keys,
+            keyboard_[action],
+            kActionButtons[action]);
     }
+
+#endif
+
     return static_cast<input::ButtonMask>(
-        result | sample_gamepad_only(gamepad));
+        result
+        | sample_gamepad_only(gamepad));
 }
 
 input::ButtonMask InputBindings::sample_gamepad_only(
@@ -296,8 +417,19 @@ input::ButtonMask InputBindings::sample_gamepad_only(
 
 input::ButtonMask InputBindings::sample_fixed_menu_navigation(
     SDL_Gamepad* gamepad) const noexcept {
-    const auto* keys = SDL_GetKeyboardState(nullptr);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+    auto result =
+        sample_switch_native_buttons();
+
+#else
+
+    const auto* keys =
+        SDL_GetKeyboardState(nullptr);
+
     input::ButtonMask result{};
+
     add_keyboard_button(result, keys, SDL_SCANCODE_UP, input::up);
     add_keyboard_button(result, keys, SDL_SCANCODE_DOWN, input::down);
     add_keyboard_button(result, keys, SDL_SCANCODE_LEFT, input::left);
@@ -306,6 +438,8 @@ input::ButtonMask InputBindings::sample_fixed_menu_navigation(
     add_keyboard_button(result, keys, SDL_SCANCODE_A, input::y);
     add_keyboard_button(result, keys, SDL_SCANCODE_Z, input::b);
     add_keyboard_button(result, keys, SDL_SCANCODE_RETURN, input::start);
+
+#endif
     add_gamepad_button(result, gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP, input::up);
     add_gamepad_button(result, gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN, input::down);
     add_gamepad_button(result, gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT, input::left);

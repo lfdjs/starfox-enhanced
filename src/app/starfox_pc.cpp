@@ -24,6 +24,10 @@
 
 #include <SDL3/SDL.h>
 
+#if defined(STARFOX_SWITCH_RUNTIME)
+#include <switch.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -55,6 +59,26 @@
 namespace {
 
 using starfox::input::ButtonMask;
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+void switch_runtime_debug(std::string_view message) noexcept {
+    svcOutputDebugString(
+        message.data(),
+        message.size());
+}
+
+void switch_runtime_debug_sdl(std::string_view stage) {
+    std::string message{
+        "[SFE SWITCH] "};
+
+    message += stage;
+    message += ": ";
+    message += SDL_GetError();
+    message += "\n";
+
+    switch_runtime_debug(message);
+}
+#endif
 
 constexpr std::uint32_t snes_width = 256U;
 constexpr std::uint32_t snes_height = 224U;
@@ -633,10 +657,29 @@ RuntimeAssets load_external_assets(
 class SdlContext {
 public:
     SdlContext() {
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before configure_native_gamepad_support\n");
+#endif
+
         starfox::app::configure_native_gamepad_support();
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before SDL_Init VIDEO+GAMEPAD+AUDIO\n");
+#endif
+
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
+#if defined(STARFOX_SWITCH_RUNTIME)
+            switch_runtime_debug_sdl("SDL_Init FAILED");
+#endif
             throw std::runtime_error{std::string{"SDL_Init: "} + SDL_GetError()};
         }
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] SDL_Init VIDEO+GAMEPAD+AUDIO OK\n");
+#endif
     }
 
     ~SdlContext() { SDL_Quit(); }
@@ -648,43 +691,194 @@ class Window {
 public:
     Window() {
 #if defined(STARFOX_SWITCH_RUNTIME)
-        constexpr auto window_title = "Star Fox Enhanced";
-        constexpr auto window_width = 1280;
-        constexpr auto window_height = 720;
-        constexpr auto window_flags = SDL_WINDOW_FULLSCREEN;
-#else
-        constexpr auto window_title = "Star Fox Enhanced - native PC runtime";
-        constexpr auto window_width = 1024;
-        constexpr auto window_height = 896;
-        constexpr auto window_flags = SDL_WINDOW_RESIZABLE;
-#endif
-        if (!SDL_CreateWindowAndRenderer(
-                window_title, window_width, window_height,
-                window_flags, &window_, &renderer_)) {
+
+        constexpr auto window_title =
+            "Star Fox Enhanced";
+
+        constexpr auto window_width =
+            1280;
+
+        constexpr auto window_height =
+            720;
+
+        switch_runtime_debug(
+            "[SFE SWITCH] Window constructor entered\n");
+
+        // Use exactly the video path validated by
+        // starfox_switch_sdl_probe:
+        //
+        // fullscreen OpenGL window
+        //        ↓
+        // explicit opengles2 renderer
+        //        ↓
+        // switch-mesa / EGL / libnx NWindow
+        //
+        // Do not use SDL_CreateWindowAndRenderer here because
+        // its automatic renderer/window negotiation differs from
+        // the path already proven on Switch/Ryubing.
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before SDL_CreateWindow OPENGL\n");
+
+        window_ = SDL_CreateWindow(
+            window_title,
+            window_width,
+            window_height,
+            SDL_WINDOW_FULLSCREEN
+                | SDL_WINDOW_OPENGL);
+
+        if (window_ == nullptr) {
+            switch_runtime_debug_sdl(
+                "SDL_CreateWindow FAILED");
+
             throw std::runtime_error{
-                std::string{"SDL_CreateWindowAndRenderer: "} + SDL_GetError()};
+                std::string{"SDL_CreateWindow: "}
+                + SDL_GetError()};
         }
+
+        switch_runtime_debug(
+            "[SFE SWITCH] SDL_CreateWindow OK\n");
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before SDL_CreateRenderer(opengles2)\n");
+
+        renderer_ = SDL_CreateRenderer(
+            window_,
+            "opengles2");
+
+        if (renderer_ == nullptr) {
+            switch_runtime_debug_sdl(
+                "SDL_CreateRenderer FAILED");
+
+            throw std::runtime_error{
+                std::string{
+                    "SDL_CreateRenderer(opengles2): "}
+                + SDL_GetError()};
+        }
+
+        switch_runtime_debug(
+            "[SFE SWITCH] SDL_CreateRenderer(opengles2) OK\n");
+
+#else
+
+        constexpr auto window_title =
+            "Star Fox Enhanced - native PC runtime";
+
+        constexpr auto window_width =
+            1024;
+
+        constexpr auto window_height =
+            896;
+
+        constexpr auto window_flags =
+            SDL_WINDOW_RESIZABLE;
+
+        if (!SDL_CreateWindowAndRenderer(
+                window_title,
+                window_width,
+                window_height,
+                window_flags,
+                &window_,
+                &renderer_)) {
+
+            throw std::runtime_error{
+                std::string{
+                    "SDL_CreateWindowAndRenderer: "}
+                + SDL_GetError()};
+        }
+
         SDL_ShowWindow(window_);
-        static_cast<void>(SDL_SyncWindow(window_));
-        // Presentation has its own exact 60 Hz schedule below. Following the
-        // display's vsync would run at 75/120/144 Hz on common PC monitors.
-        SDL_SetRenderVSync(renderer_, 0);
+
+        static_cast<void>(
+            SDL_SyncWindow(window_));
+
+        // Desktop presentation has its own exact 60 Hz schedule.
+        // Do not follow a 75/120/144 Hz desktop display.
+        SDL_SetRenderVSync(
+            renderer_,
+            0);
+
+#endif
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before logical presentation\n");
+#endif
+
         SDL_SetRenderLogicalPresentation(
-            renderer_, snes_width, snes_height, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+            renderer_,
+            snes_width,
+            snes_height,
+            SDL_LOGICAL_PRESENTATION_LETTERBOX);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] logical presentation OK\n");
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before SDL_CreateTexture\n");
+#endif
+
         texture_ = SDL_CreateTexture(
-            renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
-            snes_width, snes_height);
+            renderer_,
+            SDL_PIXELFORMAT_RGBA32,
+            SDL_TEXTUREACCESS_STREAMING,
+            snes_width,
+            snes_height);
+
         if (texture_ == nullptr) {
-            throw std::runtime_error{std::string{"SDL_CreateTexture: "} + SDL_GetError()};
+#if defined(STARFOX_SWITCH_RUNTIME)
+            switch_runtime_debug_sdl(
+                "SDL_CreateTexture FAILED");
+#endif
+
+            throw std::runtime_error{
+                std::string{"SDL_CreateTexture: "}
+                + SDL_GetError()};
         }
-        SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST);
-        // Put an actual black frame on the desktop before ROM decoding, game
-        // construction or audio-device setup can begin. A merely-created SDL
-        // window can remain compositor-transparent until its first present.
-        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
-        SDL_RenderClear(renderer_);
-        SDL_RenderPresent(renderer_);
-        static_cast<void>(SDL_SyncWindow(window_));
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] SDL_CreateTexture OK\n");
+#endif
+
+        SDL_SetTextureScaleMode(
+            texture_,
+            SDL_SCALEMODE_NEAREST);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        // The Switch EGL backend establishes swap interval 1 when
+        // its GL context is created. Preserve that fixed 60 Hz path.
+        // This intentionally differs from desktop.
+        switch_runtime_debug(
+            "[SFE SWITCH] preserving backend VSync\n");
+#endif
+
+        SDL_SetRenderDrawColor(
+            renderer_,
+            0,
+            0,
+            0,
+            255);
+
+        SDL_RenderClear(
+            renderer_);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before first runtime present\n");
+#endif
+
+        SDL_RenderPresent(
+            renderer_);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] first runtime present OK\n");
+#else
+        static_cast<void>(
+            SDL_SyncWindow(window_));
+#endif
     }
 
     ~Window() {
@@ -1460,7 +1654,42 @@ int main(int argc, char** argv) {
     try {
         const SdlContext sdl;
         Window window;
-        const auto platform_profile = starfox::app::runtime_platform_profile();
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] Window construction complete\n");
+
+        {
+            std::string argument_message{
+                "[SFE SWITCH] argc="};
+
+            argument_message += std::to_string(argc);
+
+            if (argc > 0
+                && argv != nullptr
+                && argv[0] != nullptr) {
+
+                argument_message += " argv0=";
+                argument_message += argv[0];
+            }
+
+            argument_message += "\n";
+
+            switch_runtime_debug(
+                argument_message);
+        }
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before runtime_platform_profile\n");
+#endif
+
+        const auto platform_profile =
+            starfox::app::runtime_platform_profile();
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] runtime_platform_profile OK\n");
+#endif
         std::string initial_map{platform_profile.initial_map};
 #if defined(_WIN32) && defined(STARFOX_HAS_EMBEDDED_ASSETS)
         const auto executable_directory =
@@ -1469,6 +1698,76 @@ int main(int argc, char** argv) {
             load_or_compile_runtime_assets(executable_directory);
 #endif
         const auto original_assets = [&]() -> RuntimeAssets {
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+            constexpr const char* switch_rom_path =
+                "sdmc:/switch/starfox-enhanced/SF.SFC";
+
+            constexpr const char* switch_symbols_path =
+                "sdmc:/switch/starfox-enhanced/SYMBOLS.TXT";
+
+            switch_runtime_debug(
+                "[SFE SWITCH] resolving Original runtime assets\n");
+
+            switch_runtime_debug(
+                "[SFE SWITCH] ROM: sdmc:/switch/starfox-enhanced/SF.SFC\n");
+
+            switch_runtime_debug(
+                "[SFE SWITCH] SYMBOLS: sdmc:/switch/starfox-enhanced/SYMBOLS.TXT\n");
+
+            // Probe with ordinary streams first. This intentionally avoids
+            // std::filesystem::absolute/current_path on Switch.
+            {
+                std::ifstream rom_probe{
+                    switch_rom_path,
+                    std::ios::binary};
+
+                if (!rom_probe) {
+                    switch_runtime_debug(
+                        "[SFE SWITCH] ERROR: SF.SFC not found on sdmc\n");
+
+                    throw std::runtime_error{
+                        "SF.SFC not found at "
+                        "sdmc:/switch/starfox-enhanced/SF.SFC"};
+                }
+            }
+
+            switch_runtime_debug(
+                "[SFE SWITCH] SF.SFC accessible\n");
+
+            {
+                std::ifstream symbols_probe{
+                    switch_symbols_path};
+
+                if (!symbols_probe) {
+                    switch_runtime_debug(
+                        "[SFE SWITCH] ERROR: SYMBOLS.TXT not found on sdmc\n");
+
+                    throw std::runtime_error{
+                        "SYMBOLS.TXT not found at "
+                        "sdmc:/switch/starfox-enhanced/SYMBOLS.TXT"};
+                }
+            }
+
+            switch_runtime_debug(
+                "[SFE SWITCH] SYMBOLS.TXT accessible\n");
+
+            switch_runtime_debug(
+                "[SFE SWITCH] before load_external_assets\n");
+
+            auto switch_assets =
+                load_external_assets(
+                    switch_rom_path,
+                    switch_symbols_path);
+
+            switch_runtime_debug(
+                "[SFE SWITCH] Original runtime assets loaded OK\n");
+
+            return switch_assets;
+
+#else
+
             if (argc == 1 || argc == 2) {
                 if (argc == 2) initial_map = argv[1];
 #if defined(_WIN32) && defined(STARFOX_HAS_EMBEDDED_ASSETS)
@@ -1512,9 +1811,23 @@ int main(int argc, char** argv) {
             std::cerr << "usage: starfox_pc [MAP]\n"
                          "   or: starfox_pc ROM SYMBOLS [MAP]\n";
             throw std::runtime_error{"invalid command-line arguments"};
+
+#endif
         }();
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] Original asset resolver complete\n");
+#endif
+
         std::optional<RuntimeAssets> starfox_ex_assets;
-#if defined(_WIN32) && defined(STARFOX_HAS_EMBEDDED_ASSETS)
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+        switch_runtime_debug(
+            "[SFE SWITCH] Star Fox EX external asset scan skipped\n");
+
+#elif defined(_WIN32) && defined(STARFOX_HAS_EMBEDDED_ASSETS)
         starfox_ex_assets.emplace(
             std::move(embedded_runtime_assets.starfox_ex));
 #else
@@ -1542,6 +1855,56 @@ int main(int argc, char** argv) {
         }
 #endif
         starfox::localization::DialogueCatalog ptbr_dialogues;
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+        {
+            const std::filesystem::path candidate{
+                "sdmc:/switch/starfox-enhanced/"
+                "localization/pt_BR/dialogue.tsv"};
+
+            switch_runtime_debug(
+                "[SFE SWITCH] checking optional PT-BR catalog\n");
+
+            std::ifstream probe{
+                candidate};
+
+            if (probe) {
+                probe.close();
+
+                switch_runtime_debug(
+                    "[SFE SWITCH] PT-BR catalog accessible\n");
+
+                if (ptbr_dialogues.load(candidate)) {
+
+                    std::string message{
+                        "[SFE SWITCH] PT-BR catalog loaded: "};
+
+                    message += std::to_string(
+                        ptbr_dialogues.size());
+
+                    message += " translations\n";
+
+                    switch_runtime_debug(
+                        message);
+
+                } else {
+
+                    switch_runtime_debug(
+                        "[SFE SWITCH] WARNING: PT-BR catalog invalid\n");
+                }
+
+            } else {
+
+                // Localization is optional during the Switch bootstrap.
+                // English ROM text remains the fallback.
+                switch_runtime_debug(
+                    "[SFE SWITCH] PT-BR catalog not installed; "
+                    "continuing with ROM text\n");
+            }
+        }
+
+#else
 
         {
             const auto localization_executable =
@@ -1597,6 +1960,16 @@ int main(int argc, char** argv) {
             }
         }
 
+#endif
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] auxiliary asset discovery complete\n");
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before runtime settings setup\n");
+#endif
+
         const auto log_missing_ptbr_dialogues =
             std::getenv(
                 "STARFOX_LOG_MISSING_TRANSLATIONS")
@@ -1607,10 +1980,14 @@ int main(int argc, char** argv) {
 
         const auto ex_save_path = starfox::app::starfox_ex_save_ram_path();
         auto persisted_ex_save = std::vector<std::uint8_t>{};
+#if defined(STARFOX_SWITCH_RUNTIME)
+        const auto persist_ex_save = false;
+#else
         const auto persist_ex_save =
             std::getenv("STARFOX_TEST_FRAMES") == nullptr
             && std::getenv("STARFOX_TEST_EXPERIENCE") == nullptr
             && std::getenv("STARFOX_TEST_PRESSES") == nullptr;
+#endif
         if (persist_ex_save) {
             static_cast<void>(starfox::app::load_starfox_ex_save_ram(
                 ex_save_path, persisted_ex_save));
@@ -1621,6 +1998,17 @@ int main(int argc, char** argv) {
             static_cast<void>(starfox::app::load_pregame_settings(
                 saved_pregame_path, saved_pregame));
         }
+#if defined(STARFOX_SWITCH_RUNTIME)
+
+        auto active_experience =
+            starfox::simulation::Experience::original;
+
+        switch_runtime_debug(
+            "[SFE SWITCH] runtime profile: "
+            "ORIGINAL / 20HZ / 60FPS / 16:9 / ENGLISH\\n");
+
+#else
+
         auto active_experience = static_cast<starfox::simulation::Experience>(
             saved_pregame.experience);
         if (const auto* forced_experience = std::getenv(
@@ -1629,6 +2017,8 @@ int main(int argc, char** argv) {
                 ? starfox::simulation::Experience::starfox_ex
                 : starfox::simulation::Experience::original;
         }
+#endif
+
         bool restart_runtime = true;
         bool first_runtime = true;
         bool launch_hud_editor_preview =
@@ -1645,19 +2035,63 @@ int main(int argc, char** argv) {
             throw std::runtime_error{
                 "Star Fox EX runtime assets are not installed in this build"};
         }
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] entering runtime construction\n");
+#endif
+
         const auto& assets = active_experience
                 == starfox::simulation::Experience::starfox_ex
             ? *starfox_ex_assets : original_assets;
+
         const auto& rom = assets.rom;
         const auto& symbols = assets.symbols;
-        const starfox::assets::ShapeDecoder decoder{rom, symbols};
-        const auto trigonometry = starfox::simulation::TrigTables::load(rom, symbols);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before ShapeDecoder\n");
+#endif
+
+        const starfox::assets::ShapeDecoder decoder{
+            rom,
+            symbols};
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] ShapeDecoder OK\n");
+
+        switch_runtime_debug(
+            "[SFE SWITCH] before TrigTables::load\n");
+#endif
+
+        const auto trigonometry =
+            starfox::simulation::TrigTables::load(
+                rom,
+                symbols);
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] TrigTables::load OK\n");
+#endif
         const auto initial_ex_save = active_experience
                 == starfox::simulation::Experience::starfox_ex
             ? std::span<const std::uint8_t>{persisted_ex_save}
             : std::span<const std::uint8_t>{};
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] before GameSimulation constructor\n");
+#endif
+
         starfox::simulation::GameSimulation game{
-            rom, symbols, initial_map, initial_ex_save};
+            rom,
+            symbols,
+            initial_map,
+            initial_ex_save};
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+        switch_runtime_debug(
+            "[SFE SWITCH] GameSimulation constructor OK\n");
+#endif
         auto warned_ex_save_failure = false;
         const auto synchronize_ex_save = [&] {
             if (active_experience
@@ -1712,6 +2146,17 @@ int main(int argc, char** argv) {
                 starfox::app::apply_runtime_platform_profile(
                     game, platform_profile);
             }
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+            // Switch currently ships with the Original experience and
+            // English text as fixed production defaults. PT-BR remains in
+            // development and is intentionally not selected automatically.
+            game.set_experience(
+                starfox::simulation::Experience::original);
+
+            game.set_language(
+                starfox::localization::Language::english);
+#endif
 
             if (const auto* forced_language =
                     std::getenv("STARFOX_TEST_LANGUAGE")) {

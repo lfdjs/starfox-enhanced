@@ -7,9 +7,12 @@ the deterministic game and renderer libraries, but builds its own
 The Switch profile always:
 
 - presents at 60 FPS in handheld and docked modes;
-- advances gameplay at the original deterministic 20 Hz logic frequency;
-- starts at the cartridge title (`TITLEMAP`) instead of the host configuration
-  screen;
+- advances gameplay at the deterministic 20 Hz logic frequency;
+- starts from the cartridge boot sequence (`BOOT`), including the original
+  Nintendo Presents sequence before the title screen;
+- uses the Original experience;
+- defaults to the 16:9 widescreen renderer;
+- uses English as the production language while PT-BR remains incomplete;
 - ignores the desktop pregame settings file; and
 - uses a fullscreen 1280x720 SDL surface, which the system scales for the
   active display mode.
@@ -46,7 +49,12 @@ Copy `build-switch/ports/switch/starfox_switch.nro`, `SF.SFC`, `SYMBOLS.TXT`,
 and the `localization` directory to `sdmc:/switch/starfox-enhanced/`. ROM data
 is user-supplied and is never included in the NRO.
 
-The runtime presently uses SDL's unified gamepad mapping. Dynamic controller
-art for single Joy-Con, paired Joy-Con, handheld, and Pro Controller is a
-separate follow-up milestone; it requires libnx controller-style detection
-and new original artwork.
+The runtime uses SDL's unified gamepad mapping together with a libnx-native
+Player 1 fallback. The native path maps Plus directly to SNES Start, Minus to
+Select, the Switch face-button diamond to the equivalent SNES buttons, and
+accepts both D-pad and left stick movement. This keeps console input independent
+from emulator-specific SDL mapping while remaining compatible with real Switch
+hardware.
+
+Dynamic controller art for single Joy-Con, paired Joy-Con, handheld, and Pro
+Controller remains a separate follow-up milestone.
