@@ -4766,6 +4766,8 @@ int main(int argc, char** argv) {
                         == starfox::simulation::PregamePage::main
                     && boot_game.experience()
                         == starfox::simulation::Experience::original
+                    && boot_game.language()
+                        == starfox::localization::Language::english
                     && !boot_game.god_mode()
                     && !boot_game.show_fps()
                     && boot_game.crosshair_colour()
@@ -4886,12 +4888,36 @@ int main(int argc, char** argv) {
                     == starfox::simulation::CrosshairColour::orange,
                 "crosshair colour selector did not wrap backward");
         drive_boot({0, starfox::input::right, 0});
+
         drive_boot({0, starfox::input::down, 0});
-        require(boot_game.pregame_selection() == 3U,
-                "pre-game cursor did not reach CUSTOMIZE SCREEN");
+        require(boot_game.pregame_selection() == 3U
+                    && boot_game.language()
+                        == starfox::localization::Language::english,
+                "pre-game cursor did not reach LANGUAGE");
+
+        drive_boot({0, starfox::input::right, 0});
+        require(boot_game.language()
+                    == starfox::localization::Language::portuguese_br,
+                "LANGUAGE did not enable PT-BR");
+
+        drive_boot({0, starfox::input::left, 0});
+        require(boot_game.language()
+                    == starfox::localization::Language::english,
+                "LANGUAGE did not return to English");
+
+        drive_boot({0, starfox::input::right, 0});
+        require(boot_game.language()
+                    == starfox::localization::Language::portuguese_br,
+                "LANGUAGE did not restore PT-BR");
+
         drive_boot({0, starfox::input::down, 0});
         require(boot_game.pregame_selection() == 4U,
+                "pre-game cursor did not reach CUSTOMIZE SCREEN");
+
+        drive_boot({0, starfox::input::down, 0});
+        require(boot_game.pregame_selection() == 5U,
                 "pre-game cursor did not reach OPTIONS BACK");
+
         drive_boot({0, starfox::input::a, 0});
         require(boot_game.pregame_page()
                     == starfox::simulation::PregamePage::main
@@ -4899,7 +4925,9 @@ int main(int argc, char** argv) {
                     && boot_game.god_mode()
                     && boot_game.show_fps()
                     && boot_game.crosshair_colour()
-                        == starfox::simulation::CrosshairColour::green,
+                        == starfox::simulation::CrosshairColour::green
+                    && boot_game.language()
+                        == starfox::localization::Language::portuguese_br,
                 "OPTIONS did not retain its toggles when returning to setup");
         drive_boot({0, starfox::input::down, 0});
         require(boot_game.pregame_selection() == 6U,

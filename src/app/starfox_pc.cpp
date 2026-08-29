@@ -6,6 +6,8 @@
 #include "starfox/assets/shape_decoder.hpp"
 #include "starfox/input/buttons.hpp"
 #include "starfox/input/input_latch.hpp"
+#include "starfox/localization/dialogue_catalog.hpp"
+#include "starfox/localization/language.hpp"
 #include "starfox/render/framebuffer.hpp"
 #include "starfox/render/background_renderer.hpp"
 #include "starfox/render/dust_renderer.hpp"
@@ -155,25 +157,44 @@ std::string_view display_profile_name(
 }
 
 std::string_view crosshair_colour_name(
-    starfox::simulation::CrosshairColour colour) noexcept {
+    starfox::simulation::CrosshairColour colour,
+    starfox::localization::Language language) noexcept {
+
+    using starfox::localization::TextId;
+
     switch (colour) {
     case starfox::simulation::CrosshairColour::white:
-        return "WHITE";
+        return starfox::localization::text(
+            language, TextId::color_white);
+
     case starfox::simulation::CrosshairColour::blue:
-        return "BLUE";
+        return starfox::localization::text(
+            language, TextId::color_blue);
+
     case starfox::simulation::CrosshairColour::red:
-        return "RED";
+        return starfox::localization::text(
+            language, TextId::color_red);
+
     case starfox::simulation::CrosshairColour::yellow:
-        return "YELLOW";
+        return starfox::localization::text(
+            language, TextId::color_yellow);
+
     case starfox::simulation::CrosshairColour::cyan:
-        return "CYAN";
+        return starfox::localization::text(
+            language, TextId::color_cyan);
+
     case starfox::simulation::CrosshairColour::magenta:
-        return "MAGENTA";
+        return starfox::localization::text(
+            language, TextId::color_magenta);
+
     case starfox::simulation::CrosshairColour::orange:
-        return "ORANGE";
+        return starfox::localization::text(
+            language, TextId::color_orange);
+
     case starfox::simulation::CrosshairColour::green:
     default:
-        return "GREEN";
+        return starfox::localization::text(
+            language, TextId::color_green);
     }
 }
 
@@ -1507,6 +1528,70 @@ int main(int argc, char** argv) {
             }
         }
 #endif
+        starfox::localization::DialogueCatalog ptbr_dialogues;
+
+        {
+            const auto localization_executable =
+                std::filesystem::absolute(argv[0]).parent_path();
+
+            const auto localization_current =
+                std::filesystem::current_path();
+
+            const auto localization_workspace =
+                localization_executable
+                    .parent_path()
+                    .parent_path();
+
+            const std::array localization_candidates{
+                localization_executable
+                    / "localization"
+                    / "pt_BR"
+                    / "dialogue.tsv",
+
+                localization_current
+                    / "localization"
+                    / "pt_BR"
+                    / "dialogue.tsv",
+
+                localization_workspace
+                    / "localization"
+                    / "pt_BR"
+                    / "dialogue.tsv",
+            };
+
+            for (const auto& candidate :
+                 localization_candidates) {
+
+                if (!std::filesystem::exists(candidate)) {
+                    continue;
+                }
+
+                if (ptbr_dialogues.load(candidate)) {
+                    std::cerr
+                        << "PT-BR dialogue catalog: "
+                        << candidate
+                        << " ("
+                        << ptbr_dialogues.size()
+                        << " translations)\n";
+
+                    break;
+                }
+
+                std::cerr
+                    << "warning: invalid PT-BR dialogue catalog: "
+                    << candidate
+                    << '\n';
+            }
+        }
+
+        const auto log_missing_ptbr_dialogues =
+            std::getenv(
+                "STARFOX_LOG_MISSING_TRANSLATIONS")
+            != nullptr;
+
+        std::unordered_set<std::uint32_t>
+            missing_ptbr_dialogues;
+
         const auto ex_save_path = starfox::app::starfox_ex_save_ram_path();
         auto persisted_ex_save = std::vector<std::uint8_t>{};
         const auto persist_ex_save =
@@ -1590,6 +1675,7 @@ int main(int argc, char** argv) {
                 game.show_fps(),
                 static_cast<std::uint8_t>(game.crosshair_colour()),
                 static_cast<std::uint8_t>(game.experience()),
+                static_cast<std::uint8_t>(game.language()),
             };
         };
         {
@@ -1604,6 +1690,23 @@ int main(int argc, char** argv) {
                 static_cast<starfox::simulation::CrosshairColour>(
                     saved_pregame.crosshair_colour));
             game.set_experience(active_experience);
+            game.set_language(
+                static_cast<starfox::localization::Language>(
+                    saved_pregame.language));
+
+            if (const auto* forced_language =
+                    std::getenv("STARFOX_TEST_LANGUAGE")) {
+
+                const auto language =
+                    std::string_view{forced_language};
+
+                game.set_language(
+                    language == "PT_BR"
+                        || language == "pt_BR"
+                        || language == "pt-BR"
+                    ? starfox::localization::Language::portuguese_br
+                    : starfox::localization::Language::english);
+            }
             if (hud_editor_preview) {
                 // Build the editor's static reference image from a genuine
                 // cartridge-rendered Corneria frame. This hidden preroll stops
@@ -2526,7 +2629,7 @@ int main(int argc, char** argv) {
                                    == starfox::simulation::GameFlowState::pregame_menu
                                && game.pregame_page()
                                    == starfox::simulation::PregamePage::options
-                               && game.pregame_selection() == 3U
+                               && game.pregame_selection() == 4U
                                && (controls.pressed
                                    & (starfox::input::a
                                       | starfox::input::select)) != 0U) {
@@ -3334,23 +3437,139 @@ int main(int argc, char** argv) {
                     dialogue.portrait_frame, 48, 152, comms_hud,
                     7U * 16U, dialogue.alternate_portraits);
                 if (dialogue.text_visible) {
-                    const auto text_y = dialogue.three_lines ? 153 : 169;
-                    text_renderer.draw_game_text(dialogue.text_address,
-                        83, text_y + 1, comms_hud, 7U * 16U, 9U, 175);
-                    text_renderer.draw_game_text(dialogue.text_address,
-                        82, text_y, comms_hud, 7U * 16U, std::nullopt, 174);
+                    const auto text_y =
+                        dialogue.three_lines
+                        ? 153
+                        : 169;
+
+                    const auto use_ptbr =
+                        game.language()
+                            == starfox::localization::Language::portuguese_br;
+
+                    const auto translated =
+                        use_ptbr
+                        ? ptbr_dialogues.find(
+                            dialogue.text_address)
+                        : std::nullopt;
+
+                    if (translated) {
+                        const auto source_colour =
+                            static_cast<std::uint8_t>(
+                                rom.read8(
+                                    dialogue.text_address)
+                                & 0x0fU);
+
+                        const auto maximum_lines =
+                            dialogue.three_lines
+                            ? std::size_t{3U}
+                            : std::size_t{2U};
+
+                        text_renderer.draw_utf8_wrapped(
+                            *translated,
+                            83,
+                            text_y + 1,
+                            comms_hud,
+                            9U,
+                            7U * 16U,
+                            175,
+                            maximum_lines);
+
+                        text_renderer.draw_utf8_wrapped(
+                            *translated,
+                            82,
+                            text_y,
+                            comms_hud,
+                            source_colour,
+                            7U * 16U,
+                            174,
+                            maximum_lines);
+
+                    } else {
+                        if (use_ptbr
+                            && log_missing_ptbr_dialogues
+                            && dialogue.text_address != 0U
+                            && missing_ptbr_dialogues
+                                .insert(
+                                    dialogue.text_address)
+                                .second) {
+
+                            std::cerr
+                                << "PT-BR missing dialogue: 0x"
+                                << std::hex
+                                << std::uppercase
+                                << dialogue.text_address
+                                << std::nouppercase
+                                << std::dec
+                                << '\n';
+                        }
+
+                        text_renderer.draw_game_text(
+                            dialogue.text_address,
+                            83,
+                            text_y + 1,
+                            comms_hud,
+                            7U * 16U,
+                            9U,
+                            175);
+
+                        text_renderer.draw_game_text(
+                            dialogue.text_address,
+                            82,
+                            text_y,
+                            comms_hud,
+                            7U * 16U,
+                            std::nullopt,
+                            174);
+                    }
                 }
             }
             const auto results = game.stage_results_state();
             if (results.active
                 && game.experience()
                     != starfox::simulation::Experience::starfox_ex) {
-                text_renderer.draw_game_text(
-                    score_text, 16, 24, superfx_ui);
-                text_renderer.draw_game_text(
-                    total_score_text, 16, 40, superfx_ui);
-                text_renderer.draw_game_text(
-                    team_text, 48, 69, superfx_ui);
+                if (game.language()
+                        == starfox::localization::Language::portuguese_br) {
+
+                    text_renderer.draw_utf8(
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_score),
+                        16,
+                        24,
+                        superfx_ui,
+                        static_cast<std::uint8_t>(
+                            rom.read8(score_text) & 0x0fU));
+
+                    text_renderer.draw_utf8(
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_total),
+                        16,
+                        40,
+                        superfx_ui,
+                        static_cast<std::uint8_t>(
+                            rom.read8(total_score_text) & 0x0fU));
+
+                    text_renderer.draw_utf8(
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_team),
+                        48,
+                        69,
+                        superfx_ui,
+                        static_cast<std::uint8_t>(
+                            rom.read8(team_text) & 0x0fU));
+
+                } else {
+                    text_renderer.draw_game_text(
+                        score_text, 16, 24, superfx_ui);
+
+                    text_renderer.draw_game_text(
+                        total_score_text, 16, 40, superfx_ui);
+
+                    text_renderer.draw_game_text(
+                        team_text, 48, 69, superfx_ui);
+                }
                 text_renderer.draw_ascii(
                     std::to_string(results.displayed_percentage) + "%",
                     176, 24, superfx_ui);
@@ -3394,14 +3613,50 @@ int main(int argc, char** argv) {
                     } else {
                         text_renderer.draw_game_text(teammate_text[teammate],
                             name_x[teammate], 137, superfx_ui);
-                        text_renderer.draw_game_text(teammate_down_text,
-                            down_x[teammate], 151, superfx_ui);
+                        if (game.language()
+                                == starfox::localization::Language::portuguese_br) {
+
+                            text_renderer.draw_utf8(
+                                starfox::localization::text(
+                                    game.language(),
+                                    starfox::localization::TextId::hud_down),
+                                down_x[teammate],
+                                151,
+                                superfx_ui,
+                                static_cast<std::uint8_t>(
+                                    rom.read8(teammate_down_text) & 0x0fU));
+
+                        } else {
+                            text_renderer.draw_game_text(
+                                teammate_down_text,
+                                down_x[teammate],
+                                151,
+                                superfx_ui);
+                        }
                     }
                 }
             }
             if (game.paused()) {
-                text_renderer.draw_game_text(
-                    pause_text, 90, 90, superfx_ui);
+                if (game.language()
+                        == starfox::localization::Language::portuguese_br) {
+
+                    text_renderer.draw_utf8(
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_pause),
+                        90,
+                        90,
+                        superfx_ui,
+                        static_cast<std::uint8_t>(
+                            rom.read8(pause_text) & 0x0fU));
+
+                } else {
+                    text_renderer.draw_game_text(
+                        pause_text,
+                        90,
+                        90,
+                        superfx_ui);
+                }
             }
             // A full-width layer keeps custom meter placements unclipped in
             // every aspect ratio. The default full-width coordinates are
@@ -3434,10 +3689,19 @@ int main(int argc, char** argv) {
                     const auto boss_x = static_cast<std::int32_t>(
                         superfx_hud.width()) - 18
                         - preview_boss_meter_width + boss_offset.x;
-                    constexpr std::string_view enemy_label{"ENEMY"};
-                    text_renderer.draw_ascii(enemy_label,
-                        boss_x - text_renderer.measure_ascii(enemy_label) - 4,
-                        1 + boss_offset.y, superfx_hud, 14U);
+                    const auto enemy_label =
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_enemy);
+
+                    text_renderer.draw_utf8(
+                        enemy_label,
+                        boss_x
+                            - text_renderer.measure_utf8(enemy_label)
+                            - 4,
+                        1 + boss_offset.y,
+                        superfx_hud,
+                        14U);
                 }
             }
 
@@ -3508,7 +3772,43 @@ int main(int argc, char** argv) {
                     sprite_renderer.draw_objects(ppu, framebuffer, priority,
                         viewport_origin, extend_cartridge_scene, anchor_edge_hud,
                         &active_hud_layout,
-                        suppress_configurable_hud && gameplay_hud);
+                        suppress_configurable_hud && gameplay_hud,
+                        game.language()
+                            == starfox::localization::Language::portuguese_br);
+                }
+
+                if (!suppress_configurable_hud
+                    && game.language()
+                        == starfox::localization::Language::portuguese_br) {
+
+                    const auto shield_label =
+                        starfox::localization::text(
+                            game.language(),
+                            starfox::localization::TextId::hud_shield);
+
+                    const auto shield_offset =
+                        active_hud_layout[
+                            starfox::render::HudElement::shield];
+
+                    // Original OAM tiles occupy x=24..55, centred at x=40.
+                    // Centre ESCUDO on that same anchor so custom HUD layout
+                    // offsets and widescreen edge anchoring remain coherent.
+                    const auto shield_label_x =
+                        40
+                        - text_renderer.measure_utf8(
+                            shield_label) / 2
+                        + shield_offset.x;
+
+                    const auto shield_label_y =
+                        181
+                        + shield_offset.y;
+
+                    text_renderer.draw_utf8(
+                        shield_label,
+                        shield_label_x,
+                        shield_label_y,
+                        framebuffer,
+                        14U);
                 }
             }
             const auto comms_offset = active_hud_layout[
@@ -3602,6 +3902,10 @@ int main(int argc, char** argv) {
             if (game.flow_state()
                 == starfox::simulation::GameFlowState::pregame_menu) {
                 framebuffer.clear(0U);
+
+                const auto tr = [&game](starfox::localization::TextId id) {
+                    return starfox::localization::text(game.language(), id);
+                };
                 constexpr auto border_colour = static_cast<std::uint8_t>(
                     7U * 16U + 4U);
                 constexpr std::int32_t menu_left = 12;
@@ -3623,8 +3927,8 @@ int main(int argc, char** argv) {
                                                std::string_view text,
                                                std::int32_t y,
                                                std::uint8_t colour) {
-                    text_renderer.draw_ascii(text,
-                        128 - text_renderer.measure_ascii(text) / 2
+                    text_renderer.draw_utf8(text,
+                        128 - text_renderer.measure_utf8(text) / 2
                             + viewport_origin,
                         y, framebuffer, colour);
                 };
@@ -3707,14 +4011,17 @@ int main(int argc, char** argv) {
                     // limited to unobtrusive editor chrome and drag handles.
                     solid(0, 0, static_cast<std::int32_t>(display_width),
                         11, static_cast<std::uint8_t>(palette_base + 1U));
-                    const auto editor_title = std::string{"HUD LAYOUT  "}
+                    const auto editor_title =
+                        std::string{tr(
+                            starfox::localization::TextId::hud_layout)}
+                        + "  "
                         + (game.experience()
                                 == starfox::simulation::Experience::starfox_ex
                             ? "STARFOX EX  " : "ORIGINAL  ")
                         + std::string{display_profile_name(game.display_mode())};
-                    text_renderer.draw_ascii(editor_title,
+                    text_renderer.draw_utf8(editor_title,
                         static_cast<std::int32_t>(display_width / 2U)
-                            - static_cast<std::int32_t>(editor_title.size() * 4U),
+                            - text_renderer.measure_utf8(editor_title) / 2,
                         2, framebuffer, 14U);
                     solid(0, 210, static_cast<std::int32_t>(display_width),
                         14, static_cast<std::uint8_t>(palette_base + 1U));
@@ -3728,19 +4035,47 @@ int main(int argc, char** argv) {
                             hud_editor.pointer_y)) {
                         box(done, static_cast<std::uint8_t>(palette_base + 14U));
                     }
-                    text_renderer.draw_ascii("Y RESET", reset.x + 6,
-                        reset.y + 3, framebuffer, 15U);
-                    text_renderer.draw_ascii("B DONE", done.x + 2,
-                        done.y + 3, framebuffer, 15U);
+                    const auto reset_text =
+                        std::string{"Y "}
+                        + std::string{tr(
+                            starfox::localization::TextId::reset)};
+
+                    const auto done_text =
+                        std::string{"B "}
+                        + std::string{tr(
+                            starfox::localization::TextId::done)};
+
+                    text_renderer.draw_utf8(
+                        reset_text,
+                        reset.x + 6,
+                        reset.y + 3,
+                        framebuffer,
+                        15U);
+
+                    text_renderer.draw_utf8(
+                        done_text,
+                        done.x + 2,
+                        done.y + 3,
+                        framebuffer,
+                        15U);
                 } else if (remap_menu.active) {
-                    draw_centred("CONTROLLER REMAP", 34, 14U);
-                    draw_centred("D-PAD  CHOOSE", 51, 10U);
+                    draw_centred(
+                        tr(starfox::localization::TextId::controller_remap),
+                        34, 14U);
+
+                    draw_centred(
+                        tr(starfox::localization::TextId::dpad_choose),
+                        51, 10U);
                     const auto device = remap_menu.device
                             == starfox::app::BindingDevice::keyboard
-                        ? std::string{"KEYBOARD"}
+                        ? std::string{tr(
+                            starfox::localization::TextId::keyboard)}
                         : starfox::app::gamepad_device_label(gamepad);
                     draw_centred(device, 74, 13U);
-                    const auto action = std::string{"ACTION  "}
+                    const auto action =
+                        std::string{tr(
+                            starfox::localization::TextId::action)}
+                        + "  "
                         + std::string{starfox::app::InputBindings::action_name(
                             remap_menu.action)} + "  "
                         + std::to_string(remap_menu.action + 1U) + "/"
@@ -3748,15 +4083,24 @@ int main(int argc, char** argv) {
                             starfox::app::InputBindings::action_count);
                     draw_centred(action, 98, 14U);
                     auto binding = remap_menu.waiting_for_input
-                        ? std::string{"PRESS A KEY OR CONTROL"}
+                        ? std::string{tr(
+                            starfox::localization::TextId::press_key_control)}
                         : bindings.binding_name(
                             remap_menu.device, remap_menu.action);
                     if (binding.size() > 25U) binding.resize(25U);
                     draw_centred(binding, 116,
                         remap_menu.waiting_for_input ? 14U : 7U);
-                    draw_centred("LEFT/RIGHT  DEVICE", 143, 13U);
-                    draw_centred("A  BIND   Y  DEFAULTS", 158, 13U);
-                    draw_centred("B/START/ESC  DONE", 177, 13U);
+                    draw_centred(
+                        tr(starfox::localization::TextId::left_right_device),
+                        143, 13U);
+
+                    draw_centred(
+                        tr(starfox::localization::TextId::bind_defaults),
+                        158, 13U);
+
+                    draw_centred(
+                        tr(starfox::localization::TextId::remap_done),
+                        177, 13U);
                 } else {
                     draw_centred("STAR FOX ENHANCED", 31, 14U);
                     const auto draw_cursor = [&framebuffer, viewport_origin,
@@ -3780,13 +4124,13 @@ int main(int argc, char** argv) {
                                               std::int32_t y, bool selected) {
                         const auto colour = static_cast<std::uint8_t>(
                             selected ? 14U : 7U);
-                        text_renderer.draw_ascii(label,
+                        text_renderer.draw_utf8(label,
                             menu_label_x + viewport_origin,
                             y, framebuffer, colour);
                         if (!value.empty()) {
-                            text_renderer.draw_ascii(value,
+                            text_renderer.draw_utf8(value,
                                 menu_value_right
-                                    - text_renderer.measure_ascii(value)
+                                    - text_renderer.measure_utf8(value)
                                     + viewport_origin,
                                 y, framebuffer, colour);
                         }
@@ -3794,77 +4138,101 @@ int main(int argc, char** argv) {
 
                     if (game.pregame_page()
                         == starfox::simulation::PregamePage::options) {
-                        draw_centred("OPTIONS", 40, 10U);
+                        using starfox::localization::TextId;
+
+                        draw_centred(tr(TextId::options_title), 40, 10U);
+
                         const auto god_value = game.god_mode()
-                            ? std::string_view{"ON"} : std::string_view{"OFF"};
+                            ? tr(TextId::on) : tr(TextId::off);
+
                         const auto fps_value = game.show_fps()
-                            ? std::string_view{"ON"} : std::string_view{"OFF"};
+                            ? tr(TextId::on) : tr(TextId::off);
+
                         const auto crosshair = crosshair_colour_name(
-                            game.crosshair_colour());
-                        draw_row("GOD MODE", god_value, 56,
+                            game.crosshair_colour(),
+                            game.language());
+
+                        draw_row(tr(TextId::god_mode), god_value, 56,
                             game.pregame_selection() == 0U);
-                        draw_row("ON-SCREEN FPS", fps_value, 76,
+
+                        draw_row(tr(TextId::onscreen_fps), fps_value, 76,
                             game.pregame_selection() == 1U);
-                        draw_row("CROSSHAIR COLOR", crosshair, 96,
+
+                        draw_row(tr(TextId::crosshair_color), crosshair, 96,
                             game.pregame_selection() == 2U);
-                        draw_row("CUSTOMIZE SCREEN", "A  OPEN", 116,
+
+                        draw_row(tr(TextId::language),
+                            starfox::localization::language_name(
+                                game.language()),
+                            114,
                             game.pregame_selection() == 3U);
-                        draw_row("BACK", "", 146,
+
+                        draw_row(tr(TextId::customize_screen),
+                            tr(TextId::open), 132,
                             game.pregame_selection() == 4U);
-                        constexpr std::array<std::int32_t, 5> cursor_y{
-                            59, 79, 99, 119, 149};
+
+                        draw_row(tr(TextId::back), "", 150,
+                            game.pregame_selection() == 5U);
+
+                        constexpr std::array<std::int32_t, 6> cursor_y{
+                            59, 79, 99, 117, 135, 153};
+
                         draw_cursor(cursor_y[game.pregame_selection()]);
-                        draw_centred("A/LEFT/RIGHT  CHANGE", 181, 13U);
-                        draw_centred("B  BACK", 191, 13U);
+
+                        draw_centred(tr(TextId::change_hint), 181, 13U);
+                        draw_centred(tr(TextId::back_hint), 191, 13U);
                     } else {
-                        draw_centred("PRE-GAME SETUP", 46, 10U);
+                        using starfox::localization::TextId;
+
+                        draw_centred(tr(TextId::pregame_setup), 46, 10U);
                         const auto timing = game.timing_mode()
                             == starfox::simulation::TimingMode::unlocked_20_fps
-                            ? std::string_view{"UNLOCKED 20 HZ"}
-                            : std::string_view{"ORIGINAL"};
+                            ? tr(TextId::unlocked_20_hz)
+                            : tr(TextId::original_speed);
                         const auto presentation =
                             std::to_string(game.presentation_fps()) + " FPS";
-                        const auto display = [mode = game.display_mode()]()
-                            -> std::string_view {
+                        const auto display =
+                            [&tr, mode = game.display_mode()]()
+                                -> std::string_view {
                             switch (mode) {
                             case starfox::simulation::DisplayMode::widescreen_16_9:
-                                return "16 BY 9 WIDE";
+                                return tr(TextId::display_16_9);
                             case starfox::simulation::DisplayMode::widescreen_16_10:
-                                return "16 BY 10 WIDE";
+                                return tr(TextId::display_16_10);
                             case starfox::simulation::DisplayMode::ultrawide_21_9:
-                                return "21 BY 9 ULTRA";
+                                return tr(TextId::display_21_9);
                             case starfox::simulation::DisplayMode::super_ultrawide_32_9:
-                                return "32 BY 9 SUPER";
+                                return tr(TextId::display_32_9);
                             case starfox::simulation::DisplayMode::standard_4_3:
                             default:
-                                return "4 BY 3 STANDARD";
+                                return tr(TextId::display_4_3);
                             }
                         }();
                         const auto experience = game.experience()
                             == starfox::simulation::Experience::original
-                            ? std::string_view{"ORIGINAL"}
-                            : std::string_view{"STARFOX EX"};
+                            ? tr(TextId::original_experience)
+                            : tr(TextId::starfox_ex_experience);
                         constexpr std::array<std::int32_t, 7> row_y{
                             60, 78, 96, 114, 132, 150, 168};
-                        draw_row("EXPERIENCE", experience, row_y[0],
+                        draw_row(tr(TextId::experience), experience, row_y[0],
                             game.pregame_selection() == 0U);
-                        draw_row("GAME PACE", timing, row_y[1],
+                        draw_row(tr(TextId::game_pace), timing, row_y[1],
                             game.pregame_selection() == 1U);
-                        draw_row("RENDER FPS", presentation, row_y[2],
+                        draw_row(tr(TextId::render_fps), presentation, row_y[2],
                             game.pregame_selection() == 2U);
-                        draw_row("DISPLAY", display, row_y[3],
+                        draw_row(tr(TextId::display), display, row_y[3],
                             game.pregame_selection() == 3U);
-                        draw_row("CONTROLLER", "A  REMAP", row_y[4],
+                        draw_row(tr(TextId::controller), tr(TextId::remap), row_y[4],
                             game.pregame_selection() == 4U);
-                        draw_row("OPTIONS", "A  OPEN", row_y[5],
+                        draw_row(tr(TextId::options), tr(TextId::open), row_y[5],
                             game.pregame_selection() == 5U);
-                        draw_row("START GAME", "", row_y[6],
+                        draw_row(tr(TextId::start_game), "", row_y[6],
                             game.pregame_selection() == 6U);
                         constexpr std::array<std::int32_t, 7> cursor_y{
                             63, 81, 99, 117, 135, 153, 171};
                         draw_cursor(cursor_y[game.pregame_selection()]);
-                        draw_centred("D-PAD CHOOSE   A SELECT", 181, 13U);
-                        draw_centred("START  BEGIN", 191, 13U);
+                        draw_centred(tr(TextId::choose_hint), 181, 13U);
+                        draw_centred(tr(TextId::begin_hint), 191, 13U);
                     }
                 }
             }

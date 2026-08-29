@@ -57,7 +57,31 @@ public:
         std::uint8_t colour = 14U,
         std::uint8_t colour_index_base = 7U * 16U) const;
 
+    // Host-interface UTF-8 renderer. ASCII characters continue using the
+    // original Star Fox ROM font. Portuguese Latin characters reuse the
+    // corresponding ROM glyph and add their diacritic on the host layer.
+    void draw_utf8(
+        std::string_view text,
+        std::int32_t x,
+        std::int32_t y,
+        Framebuffer& target,
+        std::uint8_t colour = 14U,
+        std::uint8_t colour_index_base = 7U * 16U) const;
+
     [[nodiscard]] std::int32_t measure_ascii(std::string_view text) const;
+
+    [[nodiscard]] std::int32_t measure_utf8(
+        std::string_view text) const;
+
+    void draw_utf8_wrapped(
+        std::string_view text,
+        std::int32_t x,
+        std::int32_t y,
+        Framebuffer& target,
+        std::uint8_t colour = 14U,
+        std::uint8_t colour_index_base = 7U * 16U,
+        std::int32_t right_clip = 224,
+        std::size_t max_lines = 3U) const;
 
 private:
     const assets::RomImage* rom_{};

@@ -10,3 +10,5 @@ Starfox-Assets.BIN
 /tmp/
 __pycache__/
 *.pyc
+
+/dist/StarFoxEnhanced-linux/

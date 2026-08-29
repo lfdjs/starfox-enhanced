@@ -1,0 +1,1283 @@
+#!/usr/bin/env bash
+
+# ============================================================
+# STAR FOX ENHANCED — SETUP / BUILD / TEST LINUX
+# ============================================================
+#
+# Projeto esperado:
+# ~/Documentos/projetos_recompilacao_estatica/starfox-enhanced
+#
+# Funções:
+#   - diagnóstico do ambiente
+#   - instalação opcional/automática de dependências Debian/Ubuntu
+#   - auditoria do Git
+#   - validação dos outputs UltraStarFox / Star Fox EX
+#   - configuração CMake + Ninja
+#   - compilação starfox_pc
+#   - testes CTest
+#   - smoke test SDL headless
+#   - instalação em dist/
+#   - criação de play-starfox.sh
+#   - geração de relatórios completos
+#
+# Uso:
+#
+#   ./tools/scripts/setup-linux.sh
+#
+# Não instalar dependências:
+#
+#   ./tools/scripts/setup-linux.sh --no-install-deps
+#
+# Compilar e depois abrir o jogo:
+#
+#   ./tools/scripts/setup-linux.sh --run
+#
+# Abrir diretamente em um mapa:
+#
+#   ./tools/scripts/setup-linux.sh --run --map LEVEL1_1
+#
+# ============================================================
+
+set -uo pipefail
+
+PROJECT_ROOT="$HOME/Documentos/projetos_recompilacao_estatica/starfox-enhanced"
+
+BUILD_DIR="$PROJECT_ROOT/build/linux-release"
+DIST_DIR="$PROJECT_ROOT/dist/StarFoxEnhanced-linux"
+
+ORIGINAL_ROM="$PROJECT_ROOT/upstream-ultrastarfox/SF.SFC"
+ORIGINAL_SYMBOLS="$PROJECT_ROOT/upstream-ultrastarfox/SYMBOLS.TXT"
+
+EX_ROM="$PROJECT_ROOT/upstream-star-fox-ex/SFES/SFES.SFC"
+EX_SYMBOLS="$PROJECT_ROOT/upstream-star-fox-ex/SYMBOLS.TXT"
+
+EXECUTABLE="$BUILD_DIR/starfox_pc"
+LAUNCHER="$PROJECT_ROOT/play-starfox.sh"
+
+INSTALL_DEPS=1
+RUN_GAME=0
+MAP="BOOT"
+
+# ------------------------------------------------------------
+# Argumentos
+# ------------------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-install-deps)
+            INSTALL_DEPS=0
+            shift
+            ;;
+
+        --install-deps)
+            INSTALL_DEPS=1
+            shift
+            ;;
+
+        --run)
+            RUN_GAME=1
+            shift
+            ;;
+
+        --map)
+            if [[ $# -lt 2 ]]; then
+                echo "ERRO: --map requer um valor."
+                exit 2
+            fi
+            MAP="$2"
+            shift 2
+            ;;
+
+        --help|-h)
+            cat <<'HELP'
+Uso:
+
+  setup-linux.sh
+  setup-linux.sh --no-install-deps
+  setup-linux.sh --run
+  setup-linux.sh --run --map LEVEL1_1
+
+Opções:
+
+  --install-deps       instala dependências Debian/Ubuntu
+  --no-install-deps    apenas verifica as dependências
+  --run                inicia o jogo após build/testes
+  --map MAP            mapa inicial; padrão: BOOT
+  --help               mostra esta ajuda
+HELP
+            exit 0
+            ;;
+
+        *)
+            echo "Argumento desconhecido: $1"
+            exit 2
+            ;;
+    esac
+done
+
+# ------------------------------------------------------------
+# Projeto
+# ------------------------------------------------------------
+
+if [[ ! -d "$PROJECT_ROOT" ]]; then
+    echo
+    echo "ERRO: projeto não encontrado:"
+    echo "$PROJECT_ROOT"
+    echo
+    exit 3
+fi
+
+cd "$PROJECT_ROOT" || exit 3
+
+# ------------------------------------------------------------
+# Relatórios
+# ------------------------------------------------------------
+
+STAMP="$(date '+%Y%m%d-%H%M%S')"
+
+REPORT_DIR="$PROJECT_ROOT/out/linux-bootstrap-reports/$STAMP"
+
+mkdir -p "$REPORT_DIR"
+
+MASTER_LOG="$REPORT_DIR/full.log"
+SUMMARY_FILE="$REPORT_DIR/summary.txt"
+SHARE_FILE="$REPORT_DIR/report-share.txt"
+STATUS_FILE="$REPORT_DIR/status.tsv"
+ASSET_FILE="$REPORT_DIR/assets.txt"
+SYSTEM_FILE="$REPORT_DIR/system.txt"
+
+touch \
+    "$MASTER_LOG" \
+    "$STATUS_FILE"
+
+exec > >(tee -a "$MASTER_LOG") 2>&1
+
+declare -a STEP_NAMES=()
+declare -a STEP_RESULTS=()
+declare -a STEP_CODES=()
+declare -a STEP_LOGS=()
+
+FINALIZED=0
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+line() {
+    printf '%s\n' \
+        "============================================================"
+}
+
+section() {
+    echo
+    line
+    echo "$1"
+    line
+}
+
+record_step() {
+    local name="$1"
+    local result="$2"
+    local code="$3"
+    local logfile="$4"
+
+    STEP_NAMES+=("$name")
+    STEP_RESULTS+=("$result")
+    STEP_CODES+=("$code")
+    STEP_LOGS+=("$logfile")
+
+    printf '%s\t%s\t%s\t%s\n' \
+        "$name" \
+        "$result" \
+        "$code" \
+        "$logfile" \
+        >> "$STATUS_FILE"
+}
+
+run_step() {
+    local name="$1"
+    local logfile_name="$2"
+
+    shift 2
+
+    local logfile="$REPORT_DIR/$logfile_name"
+
+    section "$name"
+
+    echo "Comando:"
+    printf ' %q' "$@"
+    echo
+    echo
+
+    "$@" 2>&1 | tee "$logfile"
+
+    local rc="${PIPESTATUS[0]}"
+
+    if [[ "$rc" -eq 0 ]]; then
+        echo
+        echo "[OK] $name"
+        record_step "$name" "OK" "$rc" "$logfile"
+    else
+        echo
+        echo "[FALHA] $name — código $rc"
+        record_step "$name" "FALHA" "$rc" "$logfile"
+    fi
+
+    return "$rc"
+}
+
+skip_step() {
+    local name="$1"
+    local reason="$2"
+
+    section "$name"
+
+    echo "IGNORADO: $reason"
+
+    record_step \
+        "$name" \
+        "IGNORADO" \
+        "0" \
+        "-"
+}
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+asset_status() {
+    local label="$1"
+    local path="$2"
+
+    if [[ -s "$path" ]]; then
+        local size
+        size="$(stat -c '%s' "$path" 2>/dev/null || echo '?')"
+
+        printf 'OK\t%s\t%s bytes\t%s\n' \
+            "$label" \
+            "$size" \
+            "$path"
+
+        return 0
+    fi
+
+    printf 'AUSENTE\t%s\t-\t%s\n' \
+        "$label" \
+        "$path"
+
+    return 1
+}
+
+# ------------------------------------------------------------
+# Relatório final
+# ------------------------------------------------------------
+
+finalize_report() {
+    local script_rc="${1:-0}"
+
+    if [[ "$FINALIZED" -eq 1 ]]; then
+        return
+    fi
+
+    FINALIZED=1
+
+    local failures=0
+    local warnings=0
+    local i
+
+    for ((i=0; i<${#STEP_NAMES[@]}; ++i)); do
+        if [[ "${STEP_RESULTS[$i]}" == "FALHA" ]]; then
+            failures=$((failures + 1))
+        elif [[ "${STEP_RESULTS[$i]}" == "IGNORADO" ]]; then
+            warnings=$((warnings + 1))
+        fi
+    done
+
+    {
+        echo "STAR FOX ENHANCED — RELATÓRIO LINUX"
+        echo
+        echo "Data:        $(date --iso-8601=seconds 2>/dev/null || date)"
+        echo "Projeto:     $PROJECT_ROOT"
+        echo "Build:       $BUILD_DIR"
+        echo "Executável:  $EXECUTABLE"
+        echo "Launcher:    $LAUNCHER"
+        echo "Dist:        $DIST_DIR"
+        echo
+        echo "Resultado das etapas"
+        echo "------------------------------------------------------------"
+
+        for ((i=0; i<${#STEP_NAMES[@]}; ++i)); do
+            printf '%-42s %-10s código=%s\n' \
+                "${STEP_NAMES[$i]}" \
+                "${STEP_RESULTS[$i]}" \
+                "${STEP_CODES[$i]}"
+        done
+
+        echo
+        echo "Falhas:             $failures"
+        echo "Etapas ignoradas:   $warnings"
+        echo "Código do script:   $script_rc"
+
+        echo
+        echo "ASSETS"
+        echo "------------------------------------------------------------"
+
+        if [[ -f "$ASSET_FILE" ]]; then
+            cat "$ASSET_FILE"
+        else
+            echo "Relatório de assets não produzido."
+        fi
+
+        echo
+        echo "ARQUIVOS DE LOG"
+        echo "------------------------------------------------------------"
+        echo "Resumo:      $SUMMARY_FILE"
+        echo "Compartilhar:$SHARE_FILE"
+        echo "Log completo:$MASTER_LOG"
+        echo "Status TSV:  $STATUS_FILE"
+
+    } > "$SUMMARY_FILE"
+
+    {
+        cat "$SUMMARY_FILE"
+
+        echo
+        echo
+        echo "============================================================"
+        echo "INFORMAÇÕES DO SISTEMA"
+        echo "============================================================"
+
+        if [[ -f "$SYSTEM_FILE" ]]; then
+            cat "$SYSTEM_FILE"
+        fi
+
+        echo
+        echo
+        echo "============================================================"
+        echo "DIAGNÓSTICOS DAS ETAPAS COM FALHA"
+        echo "============================================================"
+
+        local found_failure=0
+
+        for ((i=0; i<${#STEP_NAMES[@]}; ++i)); do
+            if [[ "${STEP_RESULTS[$i]}" != "FALHA" ]]; then
+                continue
+            fi
+
+            found_failure=1
+
+            echo
+            echo "------------------------------------------------------------"
+            echo "${STEP_NAMES[$i]}"
+            echo "------------------------------------------------------------"
+
+            local failed_log="${STEP_LOGS[$i]}"
+
+            if [[ -f "$failed_log" ]]; then
+                tail -n 120 "$failed_log"
+            else
+                echo "Log indisponível."
+            fi
+        done
+
+        if [[ "$found_failure" -eq 0 ]]; then
+            echo
+            echo "Nenhuma etapa registrou falha."
+        fi
+
+        echo
+        echo
+        echo "============================================================"
+        echo "ÚLTIMAS 120 LINHAS DO LOG GERAL"
+        echo "============================================================"
+
+        tail -n 120 "$MASTER_LOG" 2>/dev/null || true
+
+    } > "$SHARE_FILE"
+
+    echo
+    line
+    echo "RELATÓRIOS GERADOS"
+    line
+    echo
+    echo "Resumo:"
+    echo "  $SUMMARY_FILE"
+    echo
+    echo "Relatório ideal para colar no ChatGPT:"
+    echo "  $SHARE_FILE"
+    echo
+    echo "Log completo:"
+    echo "  $MASTER_LOG"
+    echo
+}
+
+on_exit() {
+    local rc=$?
+
+    trap - EXIT
+
+    finalize_report "$rc"
+
+    exit "$rc"
+}
+
+trap on_exit EXIT
+
+# ------------------------------------------------------------
+# Cabeçalho
+# ------------------------------------------------------------
+
+section "STAR FOX ENHANCED — PREPARAÇÃO LINUX"
+
+echo "Projeto:"
+echo "  $PROJECT_ROOT"
+echo
+echo "Build:"
+echo "  $BUILD_DIR"
+echo
+echo "Relatórios:"
+echo "  $REPORT_DIR"
+echo
+echo "Mapa solicitado:"
+echo "  $MAP"
+
+# ------------------------------------------------------------
+# Etapa 1 — Sistema
+# ------------------------------------------------------------
+
+section "ETAPA 1 — DIAGNÓSTICO DO SISTEMA"
+
+{
+    echo "Data:"
+    date
+    echo
+
+    echo "Kernel:"
+    uname -a
+    echo
+
+    echo "/etc/os-release:"
+    if [[ -f /etc/os-release ]]; then
+        cat /etc/os-release
+    else
+        echo "Não encontrado."
+    fi
+    echo
+
+    echo "Arquitetura:"
+    uname -m
+    echo
+
+    echo "CPU:"
+    if command_exists lscpu; then
+        lscpu
+    else
+        echo "lscpu indisponível."
+    fi
+    echo
+
+    echo "Memória:"
+    if command_exists free; then
+        free -h
+    else
+        echo "free indisponível."
+    fi
+    echo
+
+    echo "Disco:"
+    df -h "$PROJECT_ROOT"
+    echo
+
+    echo "Shell:"
+    echo "${SHELL:-desconhecido}"
+
+} | tee "$SYSTEM_FILE"
+
+record_step \
+    "ETAPA 1 — diagnóstico do sistema" \
+    "OK" \
+    "0" \
+    "$SYSTEM_FILE"
+
+# ------------------------------------------------------------
+# Etapa 2 — Dependências
+# ------------------------------------------------------------
+
+install_debian_dependencies() {
+    local packages=(
+        build-essential
+        cmake
+        ninja-build
+        git
+        pkg-config
+        python3
+
+        libasound2-dev
+        libpulse-dev
+        libudev-dev
+        libdbus-1-dev
+
+        libx11-dev
+        libxext-dev
+        libxrandr-dev
+        libxcursor-dev
+        libxi-dev
+        libxfixes-dev
+        libxinerama-dev
+        libxss-dev
+        libxkbcommon-dev
+
+        libwayland-dev
+        wayland-protocols
+        libdecor-0-dev
+
+        libdrm-dev
+        libgbm-dev
+
+        libgl1-mesa-dev
+        libegl1-mesa-dev
+    )
+
+    local available=()
+    local unavailable=()
+    local package
+
+    sudo -v || return $?
+
+    sudo apt-get update || return $?
+
+    for package in "${packages[@]}"; do
+        if apt-cache show "$package" >/dev/null 2>&1; then
+            available+=("$package")
+        else
+            unavailable+=("$package")
+        fi
+    done
+
+    echo
+    echo "Pacotes disponíveis:"
+    printf '  %s\n' "${available[@]}"
+
+    if [[ "${#unavailable[@]}" -gt 0 ]]; then
+        echo
+        echo "Pacotes não disponíveis nesta distribuição:"
+        printf '  %s\n' "${unavailable[@]}"
+    fi
+
+    echo
+
+    if [[ "${#available[@]}" -eq 0 ]]; then
+        echo "Nenhum pacote pôde ser localizado."
+        return 5
+    fi
+
+    sudo apt-get install -y "${available[@]}"
+}
+
+if [[ "$INSTALL_DEPS" -eq 1 ]]; then
+
+    if command_exists apt-get && command_exists apt-cache; then
+
+        run_step \
+            "ETAPA 2 — instalação de dependências" \
+            "02-dependencies.log" \
+            install_debian_dependencies
+
+        DEP_RC=$?
+
+    else
+        skip_step \
+            "ETAPA 2 — instalação de dependências" \
+            "apt-get não encontrado. O script continuará apenas verificando as ferramentas."
+
+        DEP_RC=0
+    fi
+
+else
+    skip_step \
+        "ETAPA 2 — instalação de dependências" \
+        "desabilitada com --no-install-deps"
+
+    DEP_RC=0
+fi
+
+# ------------------------------------------------------------
+# Etapa 3 — Ferramentas
+# ------------------------------------------------------------
+
+check_toolchain() {
+    local failed=0
+
+    local commands=(
+        cmake
+        ninja
+        git
+        c++
+        make
+        python3
+    )
+
+    local cmd
+
+    for cmd in "${commands[@]}"; do
+        if command_exists "$cmd"; then
+            echo
+            echo "[$cmd]"
+            command -v "$cmd"
+
+            case "$cmd" in
+                cmake)
+                    cmake --version | head -n 3
+                    ;;
+                ninja)
+                    ninja --version
+                    ;;
+                git)
+                    git --version
+                    ;;
+                c++)
+                    c++ --version | head -n 4
+                    ;;
+                make)
+                    make --version | head -n 2
+                    ;;
+                python3)
+                    python3 --version
+                    ;;
+            esac
+        else
+            echo
+            echo "[AUSENTE] $cmd"
+            failed=1
+        fi
+    done
+
+    echo
+    echo "Teste C++20:"
+
+    printf '%s\n' \
+        '#include <span>' \
+        '#include <vector>' \
+        'int main(){ std::vector<int> v{1,2}; std::span<int> s(v); return s.size()==2 ? 0 : 1; }' \
+        | c++ \
+            -std=c++20 \
+            -x c++ \
+            - \
+            -fsyntax-only
+
+    local cpp_rc=$?
+
+    if [[ "$cpp_rc" -eq 0 ]]; then
+        echo "C++20: OK"
+    else
+        echo "C++20: FALHA"
+        failed=1
+    fi
+
+    return "$failed"
+}
+
+run_step \
+    "ETAPA 3 — validação da toolchain" \
+    "03-toolchain.log" \
+    check_toolchain
+
+TOOLCHAIN_RC=$?
+
+# ------------------------------------------------------------
+# Etapa 4 — Git
+# ------------------------------------------------------------
+
+audit_git() {
+    echo "Diretório atual:"
+    pwd
+    echo
+
+    if [[ ! -d .git ]]; then
+        echo "ERRO: este diretório não contém .git"
+        return 1
+    fi
+
+    echo "Remotes:"
+    git remote -v
+    echo
+
+    echo "Branch:"
+    git branch --show-current
+    echo
+
+    echo "Commit atual:"
+    git log -1 --decorate --oneline
+    echo
+
+    echo "Status:"
+    git status --short
+    echo
+
+    echo "Arquivos principais:"
+    for f in \
+        CMakeLists.txt \
+        README.md \
+        play-starfox.ps1 \
+        src/app/starfox_pc.cpp
+    do
+        if [[ -f "$f" ]]; then
+            echo "OK      $f"
+        else
+            echo "AUSENTE $f"
+        fi
+    done
+}
+
+run_step \
+    "ETAPA 4 — auditoria do repositório" \
+    "04-git.log" \
+    audit_git
+
+GIT_RC=$?
+
+# ------------------------------------------------------------
+# Etapa 5 — Assets
+# ------------------------------------------------------------
+
+section "ETAPA 5 — VALIDAÇÃO DOS ASSETS"
+
+ORIGINAL_ASSETS_OK=1
+EX_ASSETS_OK=1
+
+{
+    echo "Estado dos assets:"
+    echo
+
+    asset_status \
+        "UltraStarFox ROM" \
+        "$ORIGINAL_ROM" \
+        || ORIGINAL_ASSETS_OK=0
+
+    asset_status \
+        "UltraStarFox SYMBOLS" \
+        "$ORIGINAL_SYMBOLS" \
+        || ORIGINAL_ASSETS_OK=0
+
+    asset_status \
+        "Star Fox EX ROM" \
+        "$EX_ROM" \
+        || EX_ASSETS_OK=0
+
+    asset_status \
+        "Star Fox EX SYMBOLS" \
+        "$EX_SYMBOLS" \
+        || EX_ASSETS_OK=0
+
+    echo
+    echo "Resumo:"
+    echo "Original assets OK: $ORIGINAL_ASSETS_OK"
+    echo "EX assets OK:       $EX_ASSETS_OK"
+
+    if [[ "$ORIGINAL_ASSETS_OK" -eq 0 ]]; then
+        echo
+        echo "ATENÇÃO:"
+        echo "O executável ainda poderá ser compilado,"
+        echo "mas o smoke test e a execução do jogo serão ignorados."
+        echo
+        echo "São necessários:"
+        echo "$ORIGINAL_ROM"
+        echo "$ORIGINAL_SYMBOLS"
+    fi
+
+    if [[ "$EX_ASSETS_OK" -eq 0 ]]; then
+        echo
+        echo "ATENÇÃO:"
+        echo "Star Fox EX não estará disponível até que os dois"
+        echo "outputs correspondentes sejam adicionados."
+    fi
+
+} | tee "$ASSET_FILE"
+
+record_step \
+    "ETAPA 5 — validação dos assets" \
+    "OK" \
+    "0" \
+    "$ASSET_FILE"
+
+# ------------------------------------------------------------
+# Etapa 6 — Limpeza/configuração
+# ------------------------------------------------------------
+
+section "ETAPA 6 — PREPARAÇÃO DO BUILD"
+
+mkdir -p "$PROJECT_ROOT/build"
+
+echo "Removendo build Linux anterior:"
+echo "$BUILD_DIR"
+
+rm -rf "$BUILD_DIR"
+
+echo "Diretório preparado."
+
+record_step \
+    "ETAPA 6 — preparação do build" \
+    "OK" \
+    "0" \
+    "-"
+
+run_step \
+    "ETAPA 7 — configuração CMake/Ninja" \
+    "07-cmake-configure.log" \
+    cmake \
+        -S "$PROJECT_ROOT" \
+        -B "$BUILD_DIR" \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DSTARFOX_BUILD_RUNTIME=ON \
+        -DSTARFOX_BUILD_TESTS=ON \
+        -DSTARFOX_EMBED_RUNTIME_ASSETS=OFF
+
+CONFIG_RC=$?
+
+# ------------------------------------------------------------
+# Etapa 8 — Build
+# ------------------------------------------------------------
+
+BUILD_RC=1
+
+if [[ "$CONFIG_RC" -eq 0 ]]; then
+
+    run_step \
+        "ETAPA 8 — compilação starfox_pc" \
+        "08-build.log" \
+        cmake \
+            --build "$BUILD_DIR" \
+            --target starfox_pc \
+            -j"$(nproc)"
+
+    BUILD_RC=$?
+
+else
+    skip_step \
+        "ETAPA 8 — compilação starfox_pc" \
+        "configuração CMake falhou"
+fi
+
+# ------------------------------------------------------------
+# Etapa 9 — Inspeção do executável
+# ------------------------------------------------------------
+
+inspect_executable() {
+    if [[ ! -x "$EXECUTABLE" ]]; then
+        echo "Executável não encontrado:"
+        echo "$EXECUTABLE"
+        return 1
+    fi
+
+    echo "Arquivo:"
+    ls -lh "$EXECUTABLE"
+    echo
+
+    if command_exists file; then
+        echo "Formato:"
+        file "$EXECUTABLE"
+        echo
+    fi
+
+    if command_exists ldd; then
+        echo "Dependências dinâmicas:"
+        ldd "$EXECUTABLE" || true
+        echo
+    fi
+
+    echo "SHA256:"
+    sha256sum "$EXECUTABLE"
+}
+
+if [[ "$BUILD_RC" -eq 0 ]]; then
+
+    run_step \
+        "ETAPA 9 — inspeção do executável ELF" \
+        "09-executable.log" \
+        inspect_executable
+
+    EXEC_RC=$?
+
+else
+    skip_step \
+        "ETAPA 9 — inspeção do executável ELF" \
+        "build não concluiu"
+
+    EXEC_RC=1
+fi
+
+# ------------------------------------------------------------
+# Etapa 10 — CTest
+# ------------------------------------------------------------
+
+TEST_RC=1
+
+if [[ "$BUILD_RC" -eq 0 ]]; then
+
+    run_step \
+        "ETAPA 10 — testes CTest" \
+        "10-ctest.log" \
+        ctest \
+            --test-dir "$BUILD_DIR" \
+            --output-on-failure
+
+    TEST_RC=$?
+
+else
+    skip_step \
+        "ETAPA 10 — testes CTest" \
+        "build não concluiu"
+fi
+
+# ------------------------------------------------------------
+# Etapa 11 — Smoke test headless
+# ------------------------------------------------------------
+
+smoke_test() {
+    echo "Executável:"
+    echo "$EXECUTABLE"
+    echo
+
+    echo "ROM:"
+    echo "$ORIGINAL_ROM"
+    echo
+
+    echo "Symbols:"
+    echo "$ORIGINAL_SYMBOLS"
+    echo
+
+    echo "Executando 6 frames com SDL dummy..."
+    echo
+
+    env \
+        SDL_VIDEODRIVER=dummy \
+        SDL_AUDIODRIVER=dummy \
+        STARFOX_TEST_FRAMES=6 \
+        STARFOX_TEST_UNPACED=1 \
+        "$EXECUTABLE" \
+        "$ORIGINAL_ROM" \
+        "$ORIGINAL_SYMBOLS" \
+        LEVEL1_1
+}
+
+SMOKE_RC=0
+
+if [[ "$BUILD_RC" -eq 0 && "$ORIGINAL_ASSETS_OK" -eq 1 ]]; then
+
+    run_step \
+        "ETAPA 11 — smoke test SDL headless" \
+        "11-smoke-test.log" \
+        smoke_test
+
+    SMOKE_RC=$?
+
+else
+    skip_step \
+        "ETAPA 11 — smoke test SDL headless" \
+        "executável ou assets Original indisponíveis"
+fi
+
+# ------------------------------------------------------------
+# Etapa 12 — Install
+# ------------------------------------------------------------
+
+INSTALL_RC=1
+
+if [[ "$BUILD_RC" -eq 0 ]]; then
+
+    rm -rf "$DIST_DIR"
+
+    run_step \
+        "ETAPA 12 — instalação em dist" \
+        "12-install.log" \
+        cmake \
+            --install "$BUILD_DIR" \
+            --prefix "$DIST_DIR"
+
+    INSTALL_RC=$?
+
+else
+    skip_step \
+        "ETAPA 12 — instalação em dist" \
+        "build não concluiu"
+fi
+
+# ------------------------------------------------------------
+# Etapa 13 — Launcher Linux
+# ------------------------------------------------------------
+
+create_launcher() {
+
+    cat > "$LAUNCHER" <<'LAUNCHER_EOF'
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+MAP="${1:-BOOT}"
+
+PROJECT_ROOT="$(
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1
+    pwd
+)"
+
+ROM_PATH="$PROJECT_ROOT/upstream-ultrastarfox/SF.SFC"
+SYMBOLS_PATH="$PROJECT_ROOT/upstream-ultrastarfox/SYMBOLS.TXT"
+
+EX_ROM_PATH="$PROJECT_ROOT/upstream-star-fox-ex/SFES/SFES.SFC"
+EX_SYMBOLS_PATH="$PROJECT_ROOT/upstream-star-fox-ex/SYMBOLS.TXT"
+
+BUILD_PATH="$PROJECT_ROOT/build/linux-release"
+EXECUTABLE_PATH="$BUILD_PATH/starfox_pc"
+
+echo
+echo "============================================================"
+echo "STAR FOX ENHANCED — LINUX"
+echo "============================================================"
+echo
+echo "Projeto:"
+echo "  $PROJECT_ROOT"
+echo
+echo "Mapa:"
+echo "  $MAP"
+echo
+
+if [[ ! -s "$ROM_PATH" ]]; then
+    echo "ERRO: UltraStarFox SF.SFC não encontrado:"
+    echo "$ROM_PATH"
+    exit 10
+fi
+
+if [[ ! -s "$SYMBOLS_PATH" ]]; then
+    echo "ERRO: UltraStarFox SYMBOLS.TXT não encontrado:"
+    echo "$SYMBOLS_PATH"
+    exit 11
+fi
+
+if [[ -s "$EX_ROM_PATH" && -s "$EX_SYMBOLS_PATH" ]]; then
+    echo "Star Fox EX assets: OK"
+else
+    echo "AVISO:"
+    echo "Os assets do Star Fox EX não estão completos."
+    echo "A experiência Original continua disponível."
+fi
+
+if [[ ! -x "$EXECUTABLE_PATH" ]]; then
+
+    echo
+    echo "Executável Linux ainda não existe."
+    echo "Configurando e compilando..."
+    echo
+
+    cmake \
+        -S "$PROJECT_ROOT" \
+        -B "$BUILD_PATH" \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DSTARFOX_BUILD_RUNTIME=ON \
+        -DSTARFOX_BUILD_TESTS=ON \
+        -DSTARFOX_EMBED_RUNTIME_ASSETS=OFF
+
+    cmake \
+        --build "$BUILD_PATH" \
+        --target starfox_pc \
+        -j"$(nproc)"
+fi
+
+echo
+echo "============================================================"
+echo "INICIANDO STAR FOX ENHANCED"
+echo "============================================================"
+echo
+
+cd "$PROJECT_ROOT"
+
+exec \
+    "$EXECUTABLE_PATH" \
+    "$ROM_PATH" \
+    "$SYMBOLS_PATH" \
+    "$MAP"
+
+LAUNCHER_EOF
+
+    chmod +x "$LAUNCHER"
+
+    echo "Launcher criado:"
+    echo "$LAUNCHER"
+    echo
+
+    bash -n "$LAUNCHER"
+
+    echo "Sintaxe Bash: OK"
+}
+
+run_step \
+    "ETAPA 13 — criação do play-starfox.sh" \
+    "13-launcher.log" \
+    create_launcher
+
+LAUNCHER_RC=$?
+
+# ------------------------------------------------------------
+# Etapa 14 — Estado final
+# ------------------------------------------------------------
+
+final_audit() {
+    echo "Executável principal:"
+
+    if [[ -x "$EXECUTABLE" ]]; then
+        ls -lh "$EXECUTABLE"
+    else
+        echo "AUSENTE: $EXECUTABLE"
+    fi
+
+    echo
+    echo "Launcher:"
+
+    if [[ -x "$LAUNCHER" ]]; then
+        ls -lh "$LAUNCHER"
+    else
+        echo "AUSENTE: $LAUNCHER"
+    fi
+
+    echo
+    echo "Distribuição:"
+
+    if [[ -d "$DIST_DIR" ]]; then
+        find "$DIST_DIR" \
+            -maxdepth 2 \
+            -type f \
+            -printf '%p\n' \
+            | sort
+    else
+        echo "AUSENTE: $DIST_DIR"
+    fi
+
+    echo
+    echo "Git status:"
+    git status --short
+
+    echo
+    echo "Arquivos ignorados relevantes:"
+
+    git check-ignore \
+        build/linux-release \
+        out/linux-bootstrap-reports \
+        2>/dev/null \
+        || true
+}
+
+run_step \
+    "ETAPA 14 — auditoria final" \
+    "14-final-audit.log" \
+    final_audit
+
+FINAL_AUDIT_RC=$?
+
+# ------------------------------------------------------------
+# Resultado geral
+# ------------------------------------------------------------
+
+FINAL_RC=0
+
+if [[ "$TOOLCHAIN_RC" -ne 0 ]]; then
+    FINAL_RC=20
+fi
+
+if [[ "$CONFIG_RC" -ne 0 ]]; then
+    FINAL_RC=21
+fi
+
+if [[ "$BUILD_RC" -ne 0 ]]; then
+    FINAL_RC=22
+fi
+
+if [[ "$TEST_RC" -ne 0 ]]; then
+    FINAL_RC=23
+fi
+
+if [[ "$SMOKE_RC" -ne 0 ]]; then
+    FINAL_RC=24
+fi
+
+if [[ "$INSTALL_RC" -ne 0 ]]; then
+    FINAL_RC=25
+fi
+
+if [[ "$LAUNCHER_RC" -ne 0 ]]; then
+    FINAL_RC=26
+fi
+
+# Produzir o relatório antes de eventualmente abrir o jogo.
+finalize_report "$FINAL_RC"
+
+echo
+line
+echo "RESULTADO"
+line
+echo
+
+if [[ "$FINAL_RC" -eq 0 ]]; then
+
+    echo "Build Linux concluído."
+    echo
+
+    echo "Executável:"
+    echo "  $EXECUTABLE"
+    echo
+
+    echo "Launcher:"
+    echo "  $LAUNCHER"
+    echo
+
+    echo "Para jogar:"
+    echo "  cd \"$PROJECT_ROOT\""
+    echo "  ./play-starfox.sh"
+    echo
+
+    echo "Para iniciar LEVEL1_1:"
+    echo "  ./play-starfox.sh LEVEL1_1"
+
+else
+
+    echo "Uma ou mais etapas não foram concluídas."
+    echo
+    echo "Cole no ChatGPT o conteúdo deste arquivo:"
+    echo
+    echo "  $SHARE_FILE"
+    echo
+fi
+
+# ------------------------------------------------------------
+# Execução interativa opcional
+# ------------------------------------------------------------
+
+if [[ "$RUN_GAME" -eq 1 ]]; then
+
+    if [[ "$FINAL_RC" -ne 0 ]]; then
+        echo
+        echo "O jogo não será iniciado porque houve falha no setup."
+        exit "$FINAL_RC"
+    fi
+
+    if [[ "$ORIGINAL_ASSETS_OK" -ne 1 ]]; then
+        echo
+        echo "O jogo não será iniciado porque os assets"
+        echo "do UltraStarFox estão ausentes."
+        exit 30
+    fi
+
+    echo
+    line
+    echo "INICIANDO JOGO"
+    line
+    echo
+
+    "$LAUNCHER" "$MAP"
+
+    GAME_RC=$?
+
+    exit "$GAME_RC"
+fi
+
+exit "$FINAL_RC"

@@ -108,6 +108,8 @@ add_library(starfox_core
     src/assets/rom.cpp
     src/assets/runtime_bundle.cpp
     src/assets/shape_decoder.cpp
+    src/localization/language.cpp
+    src/localization/dialogue_catalog.cpp
     src/render/background_renderer.cpp
     src/render/dust_renderer.cpp
     src/render/framebuffer.cpp
@@ -145,6 +147,15 @@ target_link_libraries(starfox_timing_demo PRIVATE starfox_core)
 
 add_executable(starfox_shape_preview src/app/shape_preview.cpp)
 target_link_libraries(starfox_shape_preview PRIVATE starfox_core)
+
+add_executable(
+    starfox_dialogue_probe
+    src/app/dialogue_probe.cpp)
+
+target_link_libraries(
+    starfox_dialogue_probe
+    PRIVATE starfox_core)
+
 
 add_executable(starfox_shape_coverage src/app/shape_coverage.cpp)
 target_link_libraries(starfox_shape_coverage PRIVATE starfox_core)
@@ -308,6 +319,22 @@ if(STARFOX_BUILD_TESTS)
     target_link_libraries(starfox_core_tests PRIVATE starfox_core)
     add_test(NAME starfox_core_tests COMMAND starfox_core_tests)
 
+    add_executable(starfox_localization_tests tests/localization_tests.cpp)
+    target_link_libraries(starfox_localization_tests PRIVATE starfox_core)
+    add_test(NAME starfox_localization_tests COMMAND starfox_localization_tests)
+
+    add_executable(
+        starfox_dialogue_catalog_tests
+        tests/dialogue_catalog_tests.cpp)
+
+    target_link_libraries(
+        starfox_dialogue_catalog_tests
+        PRIVATE starfox_core)
+
+    add_test(
+        NAME starfox_dialogue_catalog_tests
+        COMMAND starfox_dialogue_catalog_tests)
+
     add_executable(starfox_shape_decoder_tests tests/shape_decoder_tests.cpp)
     target_link_libraries(starfox_shape_decoder_tests PRIVATE starfox_core)
     add_test(NAME starfox_shape_decoder_tests COMMAND starfox_shape_decoder_tests)
@@ -396,7 +423,21 @@ if(STARFOX_BUILD_TESTS)
             )
             set_tests_properties(starfox_runtime_smoke PROPERTIES
                 ENVIRONMENT
-                    "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;STARFOX_TEST_FRAMES=6"
+                    "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;STARFOX_TEST_EXPERIENCE=ORIGINAL;STARFOX_TEST_FRAMES=6"
+                TIMEOUT 10
+            )
+
+            add_test(
+                NAME starfox_runtime_smoke_ptbr
+                COMMAND starfox_pc
+                        "${CMAKE_CURRENT_SOURCE_DIR}/upstream-ultrastarfox/SF.SFC"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/upstream-ultrastarfox/SYMBOLS.TXT"
+                        LEVEL1_1
+            )
+
+            set_tests_properties(starfox_runtime_smoke_ptbr PROPERTIES
+                ENVIRONMENT
+                    "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;STARFOX_TEST_EXPERIENCE=ORIGINAL;STARFOX_TEST_LANGUAGE=PT_BR;STARFOX_TEST_FRAMES=6"
                 TIMEOUT 10
             )
             if(STARFOX_RUNTIME_ASSETS_EMBEDDED)
@@ -482,4 +523,13 @@ if(STARFOX_BUILD_TESTS)
             ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}"
         )
     endif()
+endif()
+
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/localization")
+    install(
+        DIRECTORY
+            "${CMAKE_CURRENT_SOURCE_DIR}/localization/"
+        DESTINATION
+            "localization")
 endif()

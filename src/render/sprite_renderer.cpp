@@ -6,6 +6,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <string>
+#include <unordered_set>
 
 namespace starfox::render {
 namespace {
@@ -40,6 +44,32 @@ std::uint8_t object_pixel(
         | ((plane23 & (static_cast<std::uint16_t>(mask) << 8U)) != 0U ? 8U : 0U));
 }
 
+
+const char* hud_element_debug_name(
+    HudElement element) noexcept {
+
+    switch (element) {
+    case HudElement::lives:
+        return "LIVES";
+
+    case HudElement::shield:
+        return "SHIELD";
+
+    case HudElement::bombs_boost:
+        return "BOMBS_BOOST";
+
+    case HudElement::comms:
+        return "COMMS";
+
+    case HudElement::boss_health:
+        return "BOSS_HEALTH";
+
+    case HudElement::count:
+    default:
+        return "UNKNOWN";
+    }
+}
+
 } // namespace
 
 void SpriteRenderer::draw_objects(
@@ -50,7 +80,8 @@ void SpriteRenderer::draw_objects(
     bool extend_horizontal,
     bool anchor_edge_hud,
     const HudLayout* hud_layout,
-    bool suppress_configurable_hud) const noexcept {
+    bool suppress_configurable_hud,
+    bool suppress_original_shield_label) const noexcept {
     if ((ppu.main_screen & 0x10U) == 0U) return;
     const auto size_selection = static_cast<std::size_t>(
         (ppu.object_select >> 5U) & 7U);
@@ -102,6 +133,17 @@ void SpriteRenderer::draw_objects(
         } else if (y_byte >= 128U && x < 128) {
             element = HudElement::comms;
         }
+        // Retail SHIELD is encoded as four 8x8 OAM tiles at $CB-$CE.
+        // PT-BR replaces only those source text tiles. Keep the shield meter,
+        // life counter, bomb icons and every other HUD sprite untouched.
+        if (suppress_original_shield_label
+            && element
+            && *element == HudElement::shield
+            && tile >= 0xCBU
+            && tile <= 0xCEU) {
+            continue;
+        }
+
         if (suppress_configurable_hud && element) continue;
         const auto object_offset = hud_layout != nullptr && element
             ? (*hud_layout)[*element] : HudOffset{};
@@ -112,6 +154,65 @@ void SpriteRenderer::draw_objects(
         const auto object_priority = static_cast<std::uint8_t>(
             (ppu.oam[low + 3U] >> 4U) & 3U);
         if (priority && object_priority != *priority) continue;
+
+        if (std::getenv("STARFOX_LOG_HUD_OAM") != nullptr
+            && hud_layout != nullptr
+            && element.has_value()) {
+
+            static std::unordered_set<std::string> logged_entries;
+
+            const auto key =
+                std::to_string(static_cast<unsigned>(*element))
+                + ":"
+                + std::to_string(object)
+                + ":"
+                + std::to_string(x)
+                + ":"
+                + std::to_string(static_cast<unsigned>(y_byte))
+                + ":"
+                + std::to_string(static_cast<unsigned>(tile))
+                + ":"
+                + std::to_string(static_cast<unsigned>(palette))
+                + ":"
+                + std::to_string(static_cast<unsigned>(object_priority))
+                + ":"
+                + std::to_string(static_cast<unsigned>(size));
+
+            if (logged_entries.insert(key).second) {
+                std::cerr
+                    << "PTBR_HUD_OAM"
+                    << " group="
+                    << hud_element_debug_name(*element)
+                    << " object="
+                    << object
+                    << " x="
+                    << x
+                    << " y="
+                    << static_cast<unsigned>(y_byte)
+                    << " tile=0x"
+                    << std::hex
+                    << std::uppercase
+                    << static_cast<unsigned>(tile)
+                    << std::nouppercase
+                    << std::dec
+                    << " palette="
+                    << static_cast<unsigned>(palette)
+                    << " priority="
+                    << static_cast<unsigned>(object_priority)
+                    << " size="
+                    << size
+                    << " raw="
+                    << static_cast<unsigned>(ppu.oam[low])
+                    << ","
+                    << static_cast<unsigned>(ppu.oam[low + 1U])
+                    << ","
+                    << static_cast<unsigned>(ppu.oam[low + 2U])
+                    << ","
+                    << static_cast<unsigned>(ppu.oam[low + 3U])
+                    << '\n';
+            }
+        }
+
         const auto flip_x = (ppu.oam[low + 3U] & 0x40U) != 0U;
         const auto flip_y = (ppu.oam[low + 3U] & 0x80U) != 0U;
 

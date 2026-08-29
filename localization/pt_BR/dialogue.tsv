@@ -1,0 +1,31 @@
+# STAR FOX ENHANCED — DIÁLOGOS PT-BR
+#
+# Formato:
+#
+# 0xBBHHHH<TAB>Texto traduzido em UTF-8
+#
+# Exemplo de estrutura:
+#
+# 0x123456	Exemplo de tradução.
+#
+# Para quebra de linha explícita, use:
+#
+# \n
+#
+# Endereços sem tradução cadastrada usam automaticamente
+# o texto original em inglês da ROM.
+#
+# Este arquivo começa sem falas do roteiro.
+
+# ============================================================
+# BLOCO 01 — TREINAMENTO / INÍCIO
+# ============================================================
+0x01F7EB	Certo, Fox! Mostre do que é capaz!
+0x01F814	Passe por todos os anéis!
+0x01F83F	Use o controle tipo A ou B!
+0x01F86B	Ahhh... você é habilidoso, Fox!
+0x01F8C1	Aperte START e volte ao jogo, croac!
+0x01F8F0	Não acredito que Pepper vai nos testar!
+0x01FADF	Siga-me, Fox!
+0x01FB0D	Mantenha a formação!
+0x01FB23	O que deu em você hoje, Fox?!

@@ -148,7 +148,7 @@ int main() {
     const auto pregame_test_path = std::filesystem::temp_directory_path()
         / "starfox-enhanced-pregame-test.cfg";
     const starfox::app::PregameSettings saved_pregame{
-        1U, 90U, 3U, true, true, 5U, 1U};
+        1U, 90U, 3U, true, true, 5U, 1U, 1U};
     require(starfox::app::save_pregame_settings(
                 pregame_test_path, saved_pregame),
             "pre-game settings could not be saved");

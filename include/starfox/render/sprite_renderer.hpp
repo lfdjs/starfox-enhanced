@@ -23,7 +23,8 @@ public:
         bool extend_horizontal = true,
         bool anchor_edge_hud = false,
         const HudLayout* hud_layout = nullptr,
-        bool suppress_configurable_hud = false) const noexcept;
+        bool suppress_configurable_hud = false,
+        bool suppress_original_shield_label = false) const noexcept;
     void draw_meters(
         const simulation::MeterState& meters,
         Framebuffer& target,

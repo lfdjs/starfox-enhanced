@@ -2,6 +2,7 @@
 
 #include "starfox/assets/rom.hpp"
 #include "starfox/input/input_latch.hpp"
+#include "starfox/localization/language.hpp"
 #include "starfox/simulation/map_vm.hpp"
 #include "starfox/simulation/math.hpp"
 #include "starfox/simulation/dust_system.hpp"
@@ -199,6 +200,14 @@ public:
     void set_timing_mode(TimingMode mode) noexcept { timing_mode_ = mode; }
     [[nodiscard]] Experience experience() const noexcept { return experience_; }
     void set_experience(Experience experience) noexcept { experience_ = experience; }
+
+    [[nodiscard]] starfox::localization::Language language() const noexcept {
+        return language_;
+    }
+
+    void set_language(starfox::localization::Language language) noexcept {
+        language_ = language;
+    }
     [[nodiscard]] DisplayMode display_mode() const noexcept { return display_mode_; }
     void set_display_mode(DisplayMode mode) noexcept { display_mode_ = mode; }
     [[nodiscard]] std::uint16_t presentation_fps() const noexcept {
@@ -737,6 +746,8 @@ private:
     std::uint8_t pregame_selection_{};
     PregamePage pregame_page_{PregamePage::main};
     Experience experience_{Experience::original};
+    starfox::localization::Language language_{
+        starfox::localization::Language::english};
     bool god_mode_{};
     bool show_fps_{};
     CrosshairColour crosshair_colour_{CrosshairColour::green};

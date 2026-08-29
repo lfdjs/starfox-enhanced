@@ -85,6 +85,7 @@ struct PregameSettings {
     bool show_fps{};
     std::uint8_t crosshair_colour{};
     std::uint8_t experience{};
+    std::uint8_t language{};
 
     [[nodiscard]] bool operator==(const PregameSettings&) const = default;
 };

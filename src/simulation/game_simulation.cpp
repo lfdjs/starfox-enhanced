@@ -911,7 +911,7 @@ GameTickResult GameSimulation::tick_pregame_menu(
 
     const auto previous_selection = pregame_selection_;
     const auto selection_count = pregame_page_ == PregamePage::main
-        ? std::uint8_t{7U} : std::uint8_t{5U};
+        ? std::uint8_t{7U} : std::uint8_t{6U};
     if ((input.pressed & starfox::input::up) != 0U) {
         pregame_selection_ = static_cast<std::uint8_t>(
             (pregame_selection_ + selection_count - 1U) % selection_count);
@@ -923,7 +923,7 @@ GameTickResult GameSimulation::tick_pregame_menu(
 
     if (pregame_page_ == PregamePage::options) {
         const auto go_back = (input.pressed & starfox::input::b) != 0U
-            || (pregame_selection_ == 4U
+            || (pregame_selection_ == 5U
                 && (input.pressed & (starfox::input::a
                     | starfox::input::select)) != 0U);
         if (go_back) {
@@ -960,6 +960,15 @@ GameTickResult GameSimulation::tick_pregame_menu(
                 index = (index + 1U) % kCrosshairColours.size();
             }
             crosshair_colour_ = kCrosshairColours[index];
+            queue_sound_effect(0x11U);
+        } else if (pregame_selection_ == 3U
+                   && (input.pressed & (starfox::input::left
+                       | starfox::input::right | starfox::input::select
+                       | starfox::input::a)) != 0U) {
+            language_ = language_
+                    == starfox::localization::Language::english
+                ? starfox::localization::Language::portuguese_br
+                : starfox::localization::Language::english;
             queue_sound_effect(0x11U);
         }
         result.audio_port_writes = map_.take_apu_port_writes();

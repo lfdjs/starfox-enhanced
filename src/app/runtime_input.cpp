@@ -448,12 +448,15 @@ bool load_pregame_settings(
     std::ifstream input{path};
     std::string version;
     if (!(input >> version)
-        || (version != "SFE_PREGAME_V1" && version != "SFE_PREGAME_V2")) {
+        || (version != "SFE_PREGAME_V1"
+            && version != "SFE_PREGAME_V2"
+            && version != "SFE_PREGAME_V3")) {
         return false;
     }
     auto loaded = PregameSettings{};
-    std::array<bool, 7> found{};
+    std::array<bool, 8> found{};
     found[6] = version == "SFE_PREGAME_V1";
+    found[7] = version != "SFE_PREGAME_V3";
     std::string name;
     int value{};
     while (input >> name >> value) {
@@ -479,6 +482,9 @@ bool load_pregame_settings(
         } else if (name == "EXPERIENCE") {
             loaded.experience = static_cast<std::uint8_t>(value);
             found[6] = value >= 0 && value <= 1;
+        } else if (name == "LANGUAGE") {
+            loaded.language = static_cast<std::uint8_t>(value);
+            found[7] = value >= 0 && value <= 1;
         }
     }
     if (!std::all_of(found.begin(), found.end(),
@@ -492,7 +498,7 @@ bool save_pregame_settings(
     const PregameSettings& settings) noexcept {
     if (path.empty() || settings.timing_mode > 1U
         || settings.display_mode > 4U || settings.crosshair_colour > 7U
-        || settings.experience > 1U) {
+        || settings.experience > 1U || settings.language > 1U) {
         return false;
     }
     constexpr std::array<std::uint16_t, 8> valid_fps{
@@ -504,8 +510,9 @@ bool save_pregame_settings(
     if (error) return false;
     std::ofstream output{path, std::ios::trunc};
     if (!output) return false;
-    output << "SFE_PREGAME_V2\n"
+    output << "SFE_PREGAME_V3\n"
            << "EXPERIENCE " << static_cast<unsigned>(settings.experience) << '\n'
+           << "LANGUAGE " << static_cast<unsigned>(settings.language) << '\n'
            << "TIMING_MODE " << static_cast<unsigned>(settings.timing_mode) << '\n'
            << "PRESENTATION_FPS " << settings.presentation_fps << '\n'
            << "DISPLAY_MODE " << static_cast<unsigned>(settings.display_mode) << '\n'

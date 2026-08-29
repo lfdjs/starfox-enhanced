@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace starfox::render {
 namespace {
@@ -278,6 +279,585 @@ std::int32_t ScaledTextRenderer::measure_ascii(std::string_view text) const {
                 rom_->read8(game_font_widths_ + translated));
     }
     return std::max(maximum_width, line_width);
+}
+
+
+namespace {
+
+enum class HostAccent {
+    none,
+    acute,
+    grave,
+    circumflex,
+    tilde,
+    cedilla,
+};
+
+struct HostGlyph {
+    std::uint8_t ascii{};
+    HostAccent accent{HostAccent::none};
+};
+
+struct DecodedHostCodepoint {
+    std::uint32_t value{};
+    std::size_t bytes{1U};
+};
+
+DecodedHostCodepoint decode_host_utf8(
+    std::string_view text,
+    std::size_t offset) noexcept {
+
+    const auto first = static_cast<std::uint8_t>(
+        text[offset]);
+
+    if (first < 0x80U) {
+        return {first, 1U};
+    }
+
+    if ((first & 0xe0U) == 0xc0U
+        && offset + 1U < text.size()) {
+
+        const auto second = static_cast<std::uint8_t>(
+            text[offset + 1U]);
+
+        if ((second & 0xc0U) == 0x80U) {
+            return {
+                static_cast<std::uint32_t>(
+                    ((first & 0x1fU) << 6U)
+                    | (second & 0x3fU)),
+                2U,
+            };
+        }
+    }
+
+    if ((first & 0xf0U) == 0xe0U
+        && offset + 2U < text.size()) {
+
+        const auto second = static_cast<std::uint8_t>(
+            text[offset + 1U]);
+
+        const auto third = static_cast<std::uint8_t>(
+            text[offset + 2U]);
+
+        if ((second & 0xc0U) == 0x80U
+            && (third & 0xc0U) == 0x80U) {
+
+            return {
+                static_cast<std::uint32_t>(
+                    ((first & 0x0fU) << 12U)
+                    | ((second & 0x3fU) << 6U)
+                    | (third & 0x3fU)),
+                3U,
+            };
+        }
+    }
+
+    return {
+        static_cast<std::uint32_t>('?'),
+        1U,
+    };
+}
+
+HostGlyph host_glyph(std::uint32_t codepoint) noexcept {
+
+    if (codepoint <= 0x7fU) {
+        return {
+            static_cast<std::uint8_t>(codepoint),
+            HostAccent::none,
+        };
+    }
+
+    switch (codepoint) {
+    // A / a
+    case 0x00c0U:
+        return {'A', HostAccent::grave};
+    case 0x00c1U:
+        return {'A', HostAccent::acute};
+    case 0x00c2U:
+        return {'A', HostAccent::circumflex};
+    case 0x00c3U:
+        return {'A', HostAccent::tilde};
+
+    case 0x00e0U:
+        return {'a', HostAccent::grave};
+    case 0x00e1U:
+        return {'a', HostAccent::acute};
+    case 0x00e2U:
+        return {'a', HostAccent::circumflex};
+    case 0x00e3U:
+        return {'a', HostAccent::tilde};
+
+    // C / c
+    case 0x00c7U:
+        return {'C', HostAccent::cedilla};
+    case 0x00e7U:
+        return {'c', HostAccent::cedilla};
+
+    // E / e
+    case 0x00c9U:
+        return {'E', HostAccent::acute};
+    case 0x00caU:
+        return {'E', HostAccent::circumflex};
+
+    case 0x00e9U:
+        return {'e', HostAccent::acute};
+    case 0x00eaU:
+        return {'e', HostAccent::circumflex};
+
+    // I / i
+    case 0x00cdU:
+        return {'I', HostAccent::acute};
+    case 0x00edU:
+        return {'i', HostAccent::acute};
+
+    // O / o
+    case 0x00d3U:
+        return {'O', HostAccent::acute};
+    case 0x00d4U:
+        return {'O', HostAccent::circumflex};
+    case 0x00d5U:
+        return {'O', HostAccent::tilde};
+
+    case 0x00f3U:
+        return {'o', HostAccent::acute};
+    case 0x00f4U:
+        return {'o', HostAccent::circumflex};
+    case 0x00f5U:
+        return {'o', HostAccent::tilde};
+
+    // U / u
+    case 0x00daU:
+        return {'U', HostAccent::acute};
+    case 0x00faU:
+        return {'u', HostAccent::acute};
+
+    default:
+        return {'?', HostAccent::none};
+    }
+}
+
+} // namespace
+
+void ScaledTextRenderer::draw_utf8(
+    std::string_view text,
+    std::int32_t x,
+    std::int32_t y,
+    Framebuffer& target,
+    std::uint8_t colour,
+    std::uint8_t colour_index_base) const {
+
+    const auto output_colour = static_cast<std::uint8_t>(
+        colour_index_base + (colour & 0x0fU));
+
+    const auto glyph_width =
+        [this](std::uint8_t ascii) -> std::uint8_t {
+
+        if (ascii == 32U) {
+            return 5U;
+        }
+
+        if (ascii < 32U) {
+            return 0U;
+        }
+
+        const auto translated = rom_->read8(
+            game_font_translation_
+            + static_cast<std::uint32_t>(
+                ascii - 32U));
+
+        return rom_->read8(
+            game_font_widths_ + translated);
+    };
+
+    const auto draw_base =
+        [this, &target, output_colour, &glyph_width](
+            std::uint8_t ascii,
+            std::int32_t draw_x,
+            std::int32_t draw_y) {
+
+        const auto width = glyph_width(ascii);
+
+        if (ascii <= 32U || width == 0U) {
+            return;
+        }
+
+        const auto translated = rom_->read8(
+            game_font_translation_
+            + static_cast<std::uint32_t>(
+                ascii - 32U));
+
+        const auto glyph =
+            game_font_glyphs_
+            + static_cast<std::uint32_t>(
+                translated) * 24U;
+
+        for (std::int32_t row = 0;
+             row < 12;
+             ++row) {
+
+            const auto bits = rom_->read16(
+                glyph
+                + static_cast<std::uint32_t>(
+                    row * 2));
+
+            for (std::int32_t column = 0;
+                 column < width;
+                 ++column) {
+
+                if ((bits
+                    & (0x8000U >> column)) != 0U) {
+
+                    target.set(
+                        draw_x + column,
+                        draw_y + row,
+                        output_colour);
+                }
+            }
+        }
+    };
+
+    const auto draw_accent =
+        [&target, output_colour](
+            HostAccent accent,
+            std::int32_t draw_x,
+            std::int32_t draw_y,
+            std::uint8_t width) {
+
+        if (accent == HostAccent::none
+            || width == 0U) {
+            return;
+        }
+
+        const auto middle =
+            std::max<std::int32_t>(
+                1,
+                static_cast<std::int32_t>(
+                    width) / 2);
+
+        const auto pixel =
+            [&target, output_colour](
+                std::int32_t px,
+                std::int32_t py) {
+
+            target.set(
+                px,
+                py,
+                output_colour);
+        };
+
+        switch (accent) {
+        case HostAccent::acute:
+            pixel(
+                draw_x + middle,
+                draw_y - 2);
+
+            pixel(
+                draw_x + middle + 1,
+                draw_y - 3);
+
+            break;
+
+        case HostAccent::grave:
+            pixel(
+                draw_x + middle,
+                draw_y - 2);
+
+            pixel(
+                draw_x + middle - 1,
+                draw_y - 3);
+
+            break;
+
+        case HostAccent::circumflex:
+            pixel(
+                draw_x + middle - 1,
+                draw_y - 2);
+
+            pixel(
+                draw_x + middle,
+                draw_y - 3);
+
+            pixel(
+                draw_x + middle + 1,
+                draw_y - 2);
+
+            break;
+
+        case HostAccent::tilde:
+            pixel(
+                draw_x + middle - 2,
+                draw_y - 2);
+
+            pixel(
+                draw_x + middle - 1,
+                draw_y - 3);
+
+            pixel(
+                draw_x + middle,
+                draw_y - 3);
+
+            pixel(
+                draw_x + middle + 1,
+                draw_y - 2);
+
+            break;
+
+        case HostAccent::cedilla:
+            pixel(
+                draw_x + middle,
+                draw_y + 12);
+
+            pixel(
+                draw_x + middle - 1,
+                draw_y + 13);
+
+            break;
+
+        case HostAccent::none:
+        default:
+            break;
+        }
+    };
+
+    const auto start_x = x;
+
+    std::size_t offset{};
+
+    while (offset < text.size()) {
+
+        const auto decoded =
+            decode_host_utf8(
+                text,
+                offset);
+
+        offset += decoded.bytes;
+
+        if (decoded.value == '\n') {
+            x = start_x;
+            y += 15;
+            continue;
+        }
+
+        if (decoded.value == '\r') {
+            continue;
+        }
+
+        const auto glyph =
+            host_glyph(decoded.value);
+
+        const auto width =
+            glyph_width(glyph.ascii);
+
+        draw_base(
+            glyph.ascii,
+            x,
+            y);
+
+        draw_accent(
+            glyph.accent,
+            x,
+            y,
+            width);
+
+        x += width;
+    }
+}
+
+std::int32_t ScaledTextRenderer::measure_utf8(
+    std::string_view text) const {
+
+    const auto glyph_width =
+        [this](std::uint8_t ascii)
+            -> std::uint8_t {
+
+        if (ascii == 32U) {
+            return 5U;
+        }
+
+        if (ascii < 32U) {
+            return 0U;
+        }
+
+        const auto translated = rom_->read8(
+            game_font_translation_
+            + static_cast<std::uint32_t>(
+                ascii - 32U));
+
+        return rom_->read8(
+            game_font_widths_ + translated);
+    };
+
+    std::int32_t current{};
+    std::int32_t maximum{};
+
+    std::size_t offset{};
+
+    while (offset < text.size()) {
+
+        const auto decoded =
+            decode_host_utf8(
+                text,
+                offset);
+
+        offset += decoded.bytes;
+
+        if (decoded.value == '\n') {
+            maximum =
+                std::max(
+                    maximum,
+                    current);
+
+            current = 0;
+
+            continue;
+        }
+
+        if (decoded.value == '\r') {
+            continue;
+        }
+
+        const auto glyph =
+            host_glyph(decoded.value);
+
+        current +=
+            static_cast<std::int32_t>(
+                glyph_width(glyph.ascii));
+    }
+
+    return std::max(
+        maximum,
+        current);
+}
+
+
+void ScaledTextRenderer::draw_utf8_wrapped(
+    std::string_view text,
+    std::int32_t x,
+    std::int32_t y,
+    Framebuffer& target,
+    std::uint8_t colour,
+    std::uint8_t colour_index_base,
+    std::int32_t right_clip,
+    std::size_t max_lines) const {
+
+    if (text.empty()
+        || max_lines == 0U) {
+        return;
+    }
+
+    const auto origin_x = x;
+
+    std::string line;
+    std::size_t lines{};
+
+    const auto flush =
+        [&]() -> bool {
+
+        if (line.empty()) {
+            return lines < max_lines;
+        }
+
+        if (lines >= max_lines) {
+            return false;
+        }
+
+        draw_utf8(
+            line,
+            origin_x,
+            y,
+            target,
+            colour,
+            colour_index_base);
+
+        line.clear();
+
+        ++lines;
+        y += 13;
+
+        return lines < max_lines;
+    };
+
+    std::size_t offset{};
+
+    while (offset < text.size()) {
+        if (text[offset] == '\r') {
+            ++offset;
+            continue;
+        }
+
+        if (text[offset] == '\n') {
+            if (!flush()) {
+                return;
+            }
+
+            ++offset;
+            continue;
+        }
+
+        while (offset < text.size()
+            && text[offset] == ' ') {
+            ++offset;
+        }
+
+        if (offset >= text.size()) {
+            break;
+        }
+
+        if (text[offset] == '\n') {
+            continue;
+        }
+
+        const auto begin = offset;
+
+        while (offset < text.size()
+            && text[offset] != ' '
+            && text[offset] != '\n'
+            && text[offset] != '\r') {
+
+            ++offset;
+        }
+
+        const auto word =
+            text.substr(
+                begin,
+                offset - begin);
+
+        auto candidate =
+            line.empty()
+            ? std::string{word}
+            : line + " "
+                + std::string{word};
+
+        if (!line.empty()
+            && origin_x
+                + measure_utf8(candidate)
+                    > right_clip) {
+
+            if (!flush()) {
+                return;
+            }
+
+            line.assign(
+                word.data(),
+                word.size());
+
+        } else {
+            line =
+                std::move(candidate);
+        }
+    }
+
+    if (!line.empty()
+        && lines < max_lines) {
+
+        draw_utf8(
+            line,
+            origin_x,
+            y,
+            target,
+            colour,
+            colour_index_base);
+    }
 }
 
 } // namespace starfox::render
