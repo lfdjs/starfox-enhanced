@@ -6,6 +6,11 @@ presents at a selectable 20, 30, 60, 90, 120, 240, 360, or 480 frames per
 second while preserving the original game's intended NTSC simulation speed
 and assembled model data. The default is 60 FPS.
 
+The Nintendo Switch homebrew target lives separately under
+[`ports/switch`](ports/switch/README.md). It starts at the cartridge title
+without the desktop pregame screen and fixes presentation at 60 FPS with the
+deterministic 20 Hz gameplay update in both handheld and docked modes.
+
 This repository is an early playable fidelity pass. It does not track a game
 executable, retail ROM, reconstructed ROM, or generated asset companion. The
 Windows executable embeds source-built BPS deltas and symbol data only. On its

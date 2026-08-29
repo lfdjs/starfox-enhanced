@@ -4,6 +4,7 @@ project(starfox_enhanced VERSION 0.1.0 LANGUAGES CXX)
 
 option(STARFOX_BUILD_TESTS "Build deterministic timing tests" ON)
 option(STARFOX_BUILD_RUNTIME "Build the SDL3 native PC runtime" ON)
+option(STARFOX_BUILD_SWITCH "Build the Nintendo Switch homebrew runtime" OFF)
 option(STARFOX_EMBED_RUNTIME_ASSETS
     "Embed source-built BPS deltas and symbol tables into the Windows runtime" ON)
 set(STARFOX_ROM_FILE
@@ -262,6 +263,10 @@ if(STARFOX_BUILD_RUNTIME)
 
 endif()
 
+if(STARFOX_BUILD_SWITCH)
+    add_subdirectory(ports/switch)
+endif()
+
 if(STARFOX_BUILD_TESTS)
     enable_testing()
     add_executable(starfox_bps_tests tests/bps_tests.cpp)
@@ -318,6 +323,12 @@ if(STARFOX_BUILD_TESTS)
     add_executable(starfox_core_tests tests/timing_tests.cpp)
     target_link_libraries(starfox_core_tests PRIVATE starfox_core)
     add_test(NAME starfox_core_tests COMMAND starfox_core_tests)
+
+    add_executable(starfox_platform_profile_tests
+        tests/platform_profile_tests.cpp)
+    target_link_libraries(starfox_platform_profile_tests PRIVATE starfox_core)
+    add_test(NAME starfox_platform_profile_tests
+        COMMAND starfox_platform_profile_tests)
 
     add_executable(starfox_localization_tests tests/localization_tests.cpp)
     target_link_libraries(starfox_localization_tests PRIVATE starfox_core)

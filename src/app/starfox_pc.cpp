@@ -1,5 +1,6 @@
 #include "starfox/audio/spc700_audio.hpp"
 #include "starfox/app/runtime_input.hpp"
+#include "starfox/app/platform_profile.hpp"
 #include "starfox/assets/bps.hpp"
 #include "starfox/assets/rom.hpp"
 #include "starfox/assets/runtime_bundle.hpp"
@@ -646,9 +647,20 @@ public:
 class Window {
 public:
     Window() {
+#if defined(STARFOX_SWITCH_RUNTIME)
+        constexpr auto window_title = "Star Fox Enhanced";
+        constexpr auto window_width = 1280;
+        constexpr auto window_height = 720;
+        constexpr auto window_flags = SDL_WINDOW_FULLSCREEN;
+#else
+        constexpr auto window_title = "Star Fox Enhanced - native PC runtime";
+        constexpr auto window_width = 1024;
+        constexpr auto window_height = 896;
+        constexpr auto window_flags = SDL_WINDOW_RESIZABLE;
+#endif
         if (!SDL_CreateWindowAndRenderer(
-                "Star Fox Enhanced - native PC runtime", 1024, 896,
-                SDL_WINDOW_RESIZABLE, &window_, &renderer_)) {
+                window_title, window_width, window_height,
+                window_flags, &window_, &renderer_)) {
             throw std::runtime_error{
                 std::string{"SDL_CreateWindowAndRenderer: "} + SDL_GetError()};
         }
@@ -1448,7 +1460,8 @@ int main(int argc, char** argv) {
     try {
         const SdlContext sdl;
         Window window;
-        std::string initial_map = "BOOT";
+        const auto platform_profile = starfox::app::runtime_platform_profile();
+        std::string initial_map{platform_profile.initial_map};
 #if defined(_WIN32) && defined(STARFOX_HAS_EMBEDDED_ASSETS)
         const auto executable_directory =
             std::filesystem::absolute(argv[0]).parent_path();
@@ -1604,8 +1617,10 @@ int main(int argc, char** argv) {
         }
         const auto saved_pregame_path = starfox::app::pregame_settings_path();
         auto saved_pregame = starfox::app::PregameSettings{};
-        static_cast<void>(starfox::app::load_pregame_settings(
-            saved_pregame_path, saved_pregame));
+        if (platform_profile.persist_host_pregame_settings) {
+            static_cast<void>(starfox::app::load_pregame_settings(
+                saved_pregame_path, saved_pregame));
+        }
         auto active_experience = static_cast<starfox::simulation::Experience>(
             saved_pregame.experience);
         if (const auto* forced_experience = std::getenv(
@@ -1693,6 +1708,10 @@ int main(int argc, char** argv) {
             game.set_language(
                 static_cast<starfox::localization::Language>(
                     saved_pregame.language));
+            if (platform_profile.bypass_host_pregame_menu) {
+                starfox::app::apply_runtime_platform_profile(
+                    game, platform_profile);
+            }
 
             if (const auto* forced_language =
                     std::getenv("STARFOX_TEST_LANGUAGE")) {
@@ -1752,7 +1771,8 @@ int main(int argc, char** argv) {
             }
         }
         const auto persist_pregame_changes =
-            std::getenv("STARFOX_TEST_PRESSES") == nullptr
+            platform_profile.persist_host_pregame_settings
+            && std::getenv("STARFOX_TEST_PRESSES") == nullptr
             && std::getenv("STARFOX_TEST_DISPLAY_MODE") == nullptr;
         const auto save_pregame_settings = [&] {
             saved_pregame = capture_pregame_settings();
