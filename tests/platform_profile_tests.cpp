@@ -7,9 +7,10 @@ int main() {
     static_assert(desktop.initial_map == "BOOT");
     static_assert(!desktop.bypass_host_pregame_menu);
     static_assert(desktop.persist_host_pregame_settings);
+    static_assert(desktop.software_frame_pacer);
 
     constexpr auto console = starfox::app::switch_runtime_profile();
-    static_assert(console.initial_map == "BOOT");
+    static_assert(console.initial_map == "INTROMAP");
     static_assert(console.bypass_host_pregame_menu);
     static_assert(!console.persist_host_pregame_settings);
     static_assert(console.presentation_fps == 60U);
@@ -17,5 +18,6 @@ int main() {
         == starfox::simulation::TimingMode::unlocked_20_fps);
     static_assert(console.display_mode
         == starfox::simulation::DisplayMode::widescreen_16_9);
+    static_assert(!console.software_frame_pacer);
     assert(true);
 }

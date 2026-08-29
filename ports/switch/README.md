@@ -8,14 +8,16 @@ The Switch profile always:
 
 - presents at 60 FPS in handheld and docked modes;
 - advances gameplay at the deterministic 20 Hz logic frequency;
-- starts from the cartridge boot sequence (`BOOT`), including the original
-  Nintendo Presents sequence before the title screen;
+- starts directly in the cartridge intro (`INTROMAP`), bypassing the host
+  pre-game setup; the intro opens with the original Nintendo Presents sequence;
 - uses the Original experience;
 - defaults to the 16:9 widescreen renderer;
 - uses English as the production language while PT-BR remains incomplete;
 - ignores the desktop pregame settings file; and
 - uses a fullscreen 1280x720 SDL surface, which the system scales for the
-  active display mode.
+  active display mode; and
+- uses the Switch EGL 60 Hz VSync as the sole production frame pacer instead
+  of combining it with the desktop software presentation clock.
 
 ## Prerequisites
 

@@ -2583,8 +2583,20 @@ int main(int argc, char** argv) {
                     if (event.type == SDL_EVENT_QUIT) running = false;
                 }
                 if (!running) break;
-                if (!test_unpaced) startup_pacer.wait_for_next_frame();
-                window.present(framebuffer, startup_palette, {});
+
+                // Desktop uses the software presentation clock because its
+                // renderer runs with VSync disabled. Switch already blocks
+                // SDL_RenderPresent on the 60 Hz EGL swap interval; sleeping
+                // here as well would double-throttle presentation.
+                if (!test_unpaced
+                    && platform_profile.software_frame_pacer) {
+                    startup_pacer.wait_for_next_frame();
+                }
+
+                window.present(
+                    framebuffer,
+                    startup_palette,
+                    {});
             }
             first_runtime = false;
         }
@@ -2944,8 +2956,12 @@ int main(int argc, char** argv) {
             window.set_relative_mouse_mode(
                 ex_mouse_capture || mouse_camera.active);
 
-            if (!test_unpaced && !advance_frozen_frame) {
-                pacer.wait_for_next_frame(game.presentation_fps());
+            if (!test_unpaced
+                && !advance_frozen_frame
+                && platform_profile.software_frame_pacer) {
+
+                pacer.wait_for_next_frame(
+                    game.presentation_fps());
             }
             const auto* keyboard_state = SDL_GetKeyboardState(nullptr);
             if (suppress_fullscreen_start

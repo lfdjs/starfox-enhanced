@@ -16,6 +16,11 @@ struct RuntimePlatformProfile {
         simulation::DisplayMode::standard_4_3};
     bool bypass_host_pregame_menu{};
     bool persist_host_pregame_settings{true};
+
+    // Desktop disables renderer VSync and uses its precise software pacer.
+    // Switch keeps EGL swap interval 1, so a second software wait would
+    // throttle the same presentation twice.
+    bool software_frame_pacer{true};
 };
 
 [[nodiscard]] constexpr RuntimePlatformProfile desktop_runtime_profile() {
@@ -24,11 +29,12 @@ struct RuntimePlatformProfile {
 
 [[nodiscard]] constexpr RuntimePlatformProfile switch_runtime_profile() {
     return {
-        "BOOT",
+        "INTROMAP",
         simulation::TimingMode::unlocked_20_fps,
         60U,
         simulation::DisplayMode::widescreen_16_9,
         true,
+        false,
         false,
     };
 }
