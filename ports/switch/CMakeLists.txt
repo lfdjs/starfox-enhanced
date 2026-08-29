@@ -34,7 +34,7 @@ add_custom_command(OUTPUT "${switch_nacp}"
     VERBATIM)
 add_custom_command(OUTPUT "${switch_nro}"
     COMMAND "${STARFOX_ELF2NRO}" "$<TARGET_FILE:starfox_switch>"
-        "${switch_nro}" --nacp="${switch_nacp}"
+        "${switch_nro}" --nacp "${switch_nacp}"
     DEPENDS starfox_switch "${switch_nacp}"
     VERBATIM)
 add_custom_target(starfox_switch_nro ALL DEPENDS "${switch_nro}")

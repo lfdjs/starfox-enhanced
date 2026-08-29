@@ -16,11 +16,16 @@ The Switch profile always:
 
 ## Prerequisites
 
-Install devkitPro's `switch-dev`, `switch-cmake`, `switch-pkg-config`, and an
-SDL3 build with the libnx Nintendo Switch backend. SDL3 is not yet shipped as
-a devkitPro pacman package, so install the maintained `devkitPro/SDL` Switch
-branch into `$DEVKITPRO/portlibs/switch` first. The desktop SDL downloaded by
-the root build is deliberately not cross-compiled.
+Install devkitPro's `switch-dev`, `switch-cmake`, `switch-pkg-config`,
+`switch-mesa`, and `switch-libdrm_nouveau`, plus an SDL3 build with a libnx
+Nintendo Switch backend. SDL3 is not yet shipped as a devkitPro pacman
+package. The currently validated combination is SDL 3.4.14 commit
+`147a8ee32dbf9ac02f3794964490687b6bbda1bc` with the
+[`sdl3-switch`](https://github.com/neomody77/sdl3-switch) patch at commit
+`182e511214d7600e4bdab8606d7caf0ef744afd6`. Install its static library,
+headers, pkg-config file, and CMake package configuration into
+`$DEVKITPRO/portlibs/switch`. The desktop SDL downloaded by the root build is
+deliberately not cross-compiled.
 
 ## Build
 
