@@ -400,7 +400,16 @@ void draw_control_visual_profile(ControlVisualProfile profile,
     const auto backdrop = framebuffer.get(
         static_cast<std::uint32_t>(5 + viewport_origin), 210U);
     fill_rect(framebuffer, x, panel_y, panel_width, panel_height, backdrop);
-    if (profile == ControlVisualProfile::dualsense) return;
+    // STARFOX_HD_PROFILE_PANEL_ONLY_PASS05
+    //
+    // These profiles use their QOI artwork in the SDL presentation
+    // pass. Keep only the cleaned cartridge panel underneath.
+    if (profile == ControlVisualProfile::dualsense
+        || profile == ControlVisualProfile::dualshock4
+        || profile == ControlVisualProfile::xbox) {
+
+        return;
+    }
     const auto title = control_visual_profile_name(profile);
     static_cast<void>(text_renderer);
     draw_mini_text(framebuffer, title,

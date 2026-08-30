@@ -120,7 +120,10 @@ struct PresentationEffects {
     bool black_side_bars{};
     std::int32_t side_bar_left{};
     std::int32_t side_bar_right{};
-    bool high_res_control_overlay{};
+    // STARFOX_MULTI_CONTROL_OVERLAY_PROFILE
+    std::optional<
+        starfox::app::ControlVisualProfile>
+        high_res_control_profile{};
 };
 
 struct QoiImage {
@@ -128,6 +131,143 @@ struct QoiImage {
     std::uint32_t height{};
     std::vector<std::uint8_t> rgba;
 };
+
+// STARFOX_CONTROL_OVERLAY_ASSET
+struct ControlOverlayAsset {
+    starfox::app::ControlVisualProfile profile{
+        starfox::app::ControlVisualProfile::
+            generic_gamepad_pc};
+
+    std::string_view filename;
+
+    SDL_Texture* texture{};
+
+    SDL_FRect source{};
+};
+
+SDL_FRect visible_qoi_bounds(
+    const QoiImage& image) noexcept {
+
+    if (image.width == 0U
+        || image.height == 0U) {
+
+        return {};
+    }
+
+    std::uint32_t left =
+        image.width;
+
+    std::uint32_t top =
+        image.height;
+
+    std::uint32_t right{};
+    std::uint32_t bottom{};
+
+    bool found{};
+
+    for (std::uint32_t y = 0U;
+         y < image.height;
+         ++y) {
+
+        for (std::uint32_t x = 0U;
+             x < image.width;
+             ++x) {
+
+            const auto offset =
+                (
+                    static_cast<std::size_t>(y)
+                    * image.width
+                    + x
+                ) * 4U;
+
+            const auto red =
+                image.rgba[offset];
+
+            const auto green =
+                image.rgba[offset + 1U];
+
+            const auto blue =
+                image.rgba[offset + 2U];
+
+            const auto alpha =
+                image.rgba[offset + 3U];
+
+            // Transparent QOIs are the normal path.
+            //
+            // The RGB test also handles exported images whose
+            // transparent canvas became opaque black.
+            const auto visible =
+                alpha >= 16U
+                && (
+                    red >= 8U
+                    || green >= 8U
+                    || blue >= 8U
+                );
+
+            if (!visible) {
+                continue;
+            }
+
+            found = true;
+
+            left =
+                std::min(left, x);
+
+            top =
+                std::min(top, y);
+
+            right =
+                std::max(right, x);
+
+            bottom =
+                std::max(bottom, y);
+        }
+    }
+
+    if (!found) {
+
+        return SDL_FRect{
+            0.0F,
+            0.0F,
+            static_cast<float>(
+                image.width),
+            static_cast<float>(
+                image.height)
+        };
+    }
+
+    constexpr std::uint32_t padding =
+        4U;
+
+    left =
+        left > padding
+        ? left - padding
+        : 0U;
+
+    top =
+        top > padding
+        ? top - padding
+        : 0U;
+
+    right =
+        std::min(
+            image.width - 1U,
+            right + padding);
+
+    bottom =
+        std::min(
+            image.height - 1U,
+            bottom + padding);
+
+    return SDL_FRect{
+        static_cast<float>(left),
+        static_cast<float>(top),
+        static_cast<float>(
+            right - left + 1U),
+        static_cast<float>(
+            bottom - top + 1U)
+    };
+}
 
 std::optional<QoiImage> load_qoi(const std::filesystem::path& path) {
     std::ifstream input{path, std::ios::binary};
@@ -913,7 +1053,7 @@ public:
             texture_,
             SDL_SCALEMODE_NEAREST);
 
-        load_high_res_control_overlay();
+        load_high_res_control_overlays();
 
 #if defined(STARFOX_SWITCH_RUNTIME)
         // The Switch EGL backend establishes swap interval 1 when
@@ -951,7 +1091,17 @@ public:
     }
 
     ~Window() {
-        SDL_DestroyTexture(control_overlay_texture_);
+
+        for (auto& overlay :
+             control_overlay_assets_) {
+
+            SDL_DestroyTexture(
+                overlay.texture);
+
+            overlay.texture =
+                nullptr;
+        }
+
         SDL_DestroyTexture(texture_);
         SDL_DestroyRenderer(renderer_);
         SDL_DestroyWindow(window_);
@@ -1179,23 +1329,19 @@ public:
                 }
             }
         }
-        // STARFOX_CONTROL_OVERLAY_WIPE_FIX
-        //
-        // The HD controller texture is rendered by SDL after the indexed
-        // framebuffer has already gone through the cartridge window wipe.
-        // Rendering it while the wipe is active makes the controller appear
-        // before CONT.SCR itself. Keep it hidden until that transition has
-        // finished; the ordinary framebuffer artwork continues to obey the
-        // cartridge masking normally.
-        const auto show_high_res_control_overlay =
-            effects.high_res_control_overlay
-            && !effects.wipe.active;
+        // STARFOX_CONTROL_OVERLAY_WIPE_FIX_V2
+        auto visible_control_profile =
+            effects.high_res_control_profile;
+
+        if (effects.wipe.active) {
+            visible_control_profile.reset();
+        }
 
         present_rgba_pixels(
             framebuffer.width(),
             framebuffer.height(),
             rgba_,
-            show_high_res_control_overlay);
+            visible_control_profile);
     }
 
     void present_rgba(std::uint32_t width, std::uint32_t height,
@@ -1205,7 +1351,11 @@ public:
         }
         ensure_dimensions(width, height);
         rgba_.assign(rgba.begin(), rgba.end());
-        present_rgba_pixels(width, height, rgba_, false);
+        present_rgba_pixels(
+            width,
+            height,
+            rgba_,
+            std::nullopt);
     }
 
     [[nodiscard]] std::span<const std::uint8_t> rgba() const noexcept {
@@ -1272,39 +1422,140 @@ public:
     }
 
 private:
-    void load_high_res_control_overlay() {
-        std::vector<std::filesystem::path> candidates;
+    void load_high_res_control_overlays() {
+
+        for (auto& overlay :
+             control_overlay_assets_) {
+
+            std::vector<
+                std::filesystem::path>
+                candidates;
+
 #if defined(STARFOX_SWITCH_RUNTIME)
-        candidates.emplace_back(
-            "romfs:/control_hints/dualsense_controls_hd_1024.qoi");
+
+            candidates.emplace_back(
+                std::filesystem::path{
+                    "romfs:/control_hints"}
+                / overlay.filename);
+
 #else
-        candidates.emplace_back(std::filesystem::current_path()
-            / "assets/control_hints/dualsense_controls_hd_1024.qoi");
-        if (const auto* base = SDL_GetBasePath(); base != nullptr) {
-            const auto executable = std::filesystem::path{base};
-            candidates.emplace_back(executable
-                / "assets/control_hints/dualsense_controls_hd_1024.qoi");
-            candidates.emplace_back(executable.parent_path().parent_path()
-                / "assets/control_hints/dualsense_controls_hd_1024.qoi");
-        }
-#endif
-        for (const auto& candidate : candidates) {
-            const auto image = load_qoi(candidate);
-            if (!image) continue;
-            control_overlay_texture_ = SDL_CreateTexture(renderer_,
-                SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
-                static_cast<int>(image->width), static_cast<int>(image->height));
-            if (control_overlay_texture_ == nullptr) continue;
-            if (!SDL_UpdateTexture(control_overlay_texture_, nullptr,
-                    image->rgba.data(), static_cast<int>(image->width * 4U))) {
-                SDL_DestroyTexture(control_overlay_texture_);
-                control_overlay_texture_ = nullptr;
-                continue;
+
+            candidates.emplace_back(
+                std::filesystem::current_path()
+                / "assets/control_hints"
+                / overlay.filename);
+
+            if (const auto* base =
+                    SDL_GetBasePath();
+                base != nullptr) {
+
+                const auto executable =
+                    std::filesystem::path{
+                        base};
+
+                candidates.emplace_back(
+                    executable
+                    / "assets/control_hints"
+                    / overlay.filename);
+
+                candidates.emplace_back(
+                    executable
+                        .parent_path()
+                        .parent_path()
+                    / "assets/control_hints"
+                    / overlay.filename);
             }
-            SDL_SetTextureBlendMode(control_overlay_texture_, SDL_BLENDMODE_BLEND);
-            SDL_SetTextureScaleMode(control_overlay_texture_, SDL_SCALEMODE_LINEAR);
-            break;
+
+#endif
+
+            for (const auto& candidate :
+                 candidates) {
+
+                const auto image =
+                    load_qoi(candidate);
+
+                if (!image) {
+                    continue;
+                }
+
+                overlay.texture =
+                    SDL_CreateTexture(
+                        renderer_,
+                        SDL_PIXELFORMAT_RGBA32,
+                        SDL_TEXTUREACCESS_STATIC,
+                        static_cast<int>(
+                            image->width),
+                        static_cast<int>(
+                            image->height));
+
+                if (overlay.texture
+                    == nullptr) {
+
+                    continue;
+                }
+
+                if (!SDL_UpdateTexture(
+                        overlay.texture,
+                        nullptr,
+                        image->rgba.data(),
+                        static_cast<int>(
+                            image->width
+                            * 4U))) {
+
+                    SDL_DestroyTexture(
+                        overlay.texture);
+
+                    overlay.texture =
+                        nullptr;
+
+                    continue;
+                }
+
+                SDL_SetTextureBlendMode(
+                    overlay.texture,
+                    SDL_BLENDMODE_BLEND);
+
+                SDL_SetTextureScaleMode(
+                    overlay.texture,
+                    SDL_SCALEMODE_LINEAR);
+
+                overlay.source =
+                    visible_qoi_bounds(
+                        *image);
+
+                break;
+            }
         }
+    }
+
+    [[nodiscard]]
+    const ControlOverlayAsset*
+    control_overlay_for(
+        starfox::app::ControlVisualProfile
+            profile) const noexcept {
+
+        const auto found =
+            std::find_if(
+                control_overlay_assets_
+                    .begin(),
+                control_overlay_assets_
+                    .end(),
+
+                [profile](
+                    const auto& overlay) {
+
+                    return overlay.profile
+                        == profile;
+                });
+
+        return found
+                != control_overlay_assets_
+                    .end()
+            && found->texture
+                != nullptr
+
+            ? &*found
+            : nullptr;
     }
 
     void set_windowed_size(std::uint32_t width, std::uint32_t height) noexcept {
@@ -1315,8 +1566,13 @@ private:
             static_cast<int>(height * integer_scale));
     }
 
-    void present_rgba_pixels(std::uint32_t width, std::uint32_t height,
-        std::span<const std::uint8_t> rgba, bool high_res_control_overlay) {
+    void present_rgba_pixels(
+        std::uint32_t width,
+        std::uint32_t height,
+        std::span<const std::uint8_t> rgba,
+        std::optional<
+            starfox::app::ControlVisualProfile>
+            high_res_control_profile) {
         if (!SDL_UpdateTexture(texture_, nullptr, rgba.data(),
                 static_cast<int>(width * 4U))) {
             throw std::runtime_error{std::string{"SDL_UpdateTexture: "} + SDL_GetError()};
@@ -1324,72 +1580,99 @@ private:
         SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, texture_, nullptr, nullptr);
-        if (high_res_control_overlay && control_overlay_texture_ != nullptr) {
+        if (high_res_control_profile) {
 
-            // STARFOX_DUALSENSE_PANEL_ALIGNMENT_PASS04
-            //
-            // CONT.SCR already reserves the cartridge-space rectangle:
-            //
-            //   x      = 13
-            //   y      = 118
-            //   width  = 145
-            //
-            // Widescreen adds viewport_origin to cartridge coordinates.
-            //
-            // Anchor the complete HD artwork to that exact panel instead of
-            // centring it against the complete 16:9/21:9 framebuffer.
+            const auto* overlay =
+                control_overlay_for(
+                    *high_res_control_profile);
 
-            constexpr float cartridge_width =
-                256.0F;
+            if (overlay != nullptr) {
 
-            constexpr float panel_x =
-                13.0F;
+                // STARFOX_MULTI_CONTROL_OVERLAY_RENDER
+                //
+                // Fit the visible part of each QOI into the same
+                // cartridge-space panel while preserving aspect ratio.
 
-            constexpr float panel_y =
-                118.0F;
+                constexpr float cartridge_width =
+                    256.0F;
 
-            constexpr float panel_width =
-                145.0F;
+                constexpr float panel_x =
+                    13.0F;
 
-            constexpr float panel_height =
-                71.0F;
+                constexpr float panel_y =
+                    118.0F;
 
+                constexpr float panel_width =
+                    145.0F;
 
-            const auto viewport_origin =
-                width > static_cast<std::uint32_t>(
-                    cartridge_width)
+                constexpr float panel_height =
+                    91.0F;
 
-                ? (
-                    static_cast<float>(width)
-                    - cartridge_width
-                  ) * 0.5F
+                const auto viewport_origin =
+                    width
+                        > static_cast<
+                            std::uint32_t>(
+                                cartridge_width)
 
-                : 0.0F;
+                    ? (
+                        static_cast<float>(
+                            width)
+                        - cartridge_width
+                      ) * 0.5F
 
+                    : 0.0F;
 
-            // The supplied 1024x1024 image has its complete controller/help
-            // composition inside this source slice.
-            const SDL_FRect source{
-                0.0F,
-                260.0F,
-                1024.0F,
-                500.0F
-            };
+                const auto aspect =
+                    overlay->source.h > 0.0F
 
+                    ? overlay->source.w
+                        / overlay->source.h
 
-            const SDL_FRect destination{
-                viewport_origin + panel_x,
-                panel_y,
-                panel_width,
-                panel_height
-            };
+                    : 1.0F;
 
+                auto destination_width =
+                    panel_width;
 
-            SDL_RenderTexture(
-                renderer_,
-                control_overlay_texture_,
-                &source,
-                &destination);
+                auto destination_height =
+                    destination_width
+                    / aspect;
+
+                if (destination_height
+                    > panel_height) {
+
+                    destination_height =
+                        panel_height;
+
+                    destination_width =
+                        destination_height
+                        * aspect;
+                }
+
+                const SDL_FRect destination{
+
+                    viewport_origin
+                        + panel_x
+                        + (
+                            panel_width
+                            - destination_width
+                          ) * 0.5F,
+
+                    panel_y
+                        + (
+                            panel_height
+                            - destination_height
+                          ) * 0.5F,
+
+                    destination_width,
+                    destination_height
+                };
+
+                SDL_RenderTexture(
+                    renderer_,
+                    overlay->texture,
+                    &overlay->source,
+                    &destination);
+            }
         }
 
         SDL_RenderPresent(renderer_);
@@ -1422,7 +1705,29 @@ private:
     SDL_Window* window_{};
     SDL_Renderer* renderer_{};
     SDL_Texture* texture_{};
-    SDL_Texture* control_overlay_texture_{};
+
+    // STARFOX_MULTI_CONTROL_OVERLAY_TEXTURES
+    std::array<ControlOverlayAsset, 3>
+        control_overlay_assets_{{
+            {
+                starfox::app::
+                    ControlVisualProfile::
+                        dualsense,
+                "dualsense_controls_white_buttons.qoi"
+            },
+            {
+                starfox::app::
+                    ControlVisualProfile::
+                        dualshock4,
+                "dualshock4_controls_corrected.qoi"
+            },
+            {
+                starfox::app::
+                    ControlVisualProfile::
+                        xbox,
+                "xbox_controls_corrected.qoi"
+            },
+        }};
     std::uint32_t texture_width_{snes_width};
     std::uint32_t texture_height_{snes_height};
     bool relative_mouse_mode_{};
@@ -2573,53 +2878,114 @@ int main(int argc, char** argv) {
         };
 
         AudioOutput audio;
-        auto gamepads = starfox::app::open_player_gamepads();
-        SDL_Gamepad* gamepad = gamepads.empty() ? nullptr : gamepads.front();
 
-        // STARFOX_DEFERRED_GAMEPAD_HOTPLUG
+        auto gamepads =
+            starfox::app::
+                open_player_gamepads();
+
+        // STARFOX_GAMEPAD_ID_CACHE_PASS05
         //
-        // SDL can deliver removal/addition plus button/axis events in the
-        // same poll batch. Never destroy SDL_Gamepad handles while that batch
-        // is still being consumed.
+        // SDL_Gamepad* may outlive the physical connection until
+        // SDL_CloseGamepad(), but we must never need to query a
+        // potentially removed handle merely to discover its ID.
+
+        std::vector<SDL_JoystickID>
+            gamepad_ids;
+
+        const auto rebuild_gamepad_ids =
+            [&] {
+
+            gamepad_ids.clear();
+
+            gamepad_ids.reserve(
+                gamepads.size());
+
+            for (auto* opened :
+                 gamepads) {
+
+                gamepad_ids.push_back(
+                    opened != nullptr
+
+                    ? SDL_GetGamepadID(
+                        opened)
+
+                    : SDL_JoystickID{});
+            }
+        };
+
+        rebuild_gamepad_ids();
+
+        SDL_Gamepad* gamepad =
+            gamepads.empty()
+            ? nullptr
+            : gamepads.front();
+
         SDL_JoystickID preferred_gamepad_id =
-            gamepad != nullptr
-            ? SDL_GetGamepadID(gamepad)
-            : SDL_JoystickID{};
+            gamepad_ids.empty()
+            ? SDL_JoystickID{}
+            : gamepad_ids.front();
 
-        bool keyboard_control_active = gamepad == nullptr;
+        bool keyboard_control_active =
+            gamepad == nullptr;
 
-        const auto close_gamepads = [&] {
-            for (auto* opened : gamepads) {
+        const auto close_gamepads =
+            [&] {
+
+            // Do not call SDL_GetGamepadID here.
+            //
+            // Cached IDs remain the only identity source once a
+            // removal event has been observed.
+
+            for (auto* opened :
+                 gamepads) {
+
                 if (opened != nullptr) {
-                    SDL_CloseGamepad(opened);
+
+                    SDL_CloseGamepad(
+                        opened);
                 }
             }
 
             gamepads.clear();
+            gamepad_ids.clear();
+
             gamepad = nullptr;
         };
 
         const auto select_gamepad_by_id =
-            [&](SDL_JoystickID identifier) noexcept {
+            [&](SDL_JoystickID identifier)
+                noexcept {
 
             if (identifier == 0U) {
                 return false;
             }
 
-            for (auto* opened : gamepads) {
+            const auto count =
+                std::min(
+                    gamepads.size(),
+                    gamepad_ids.size());
 
-                if (opened == nullptr) {
-                    continue;
-                }
+            for (std::size_t index = 0U;
+                 index < count;
+                 ++index) {
 
-                if (SDL_GetGamepadID(opened)
+                if (gamepad_ids[index]
                     != identifier) {
 
                     continue;
                 }
 
-                gamepad = opened;
-                preferred_gamepad_id = identifier;
+                if (gamepads[index]
+                    == nullptr) {
+
+                    continue;
+                }
+
+                gamepad =
+                    gamepads[index];
+
+                preferred_gamepad_id =
+                    identifier;
 
                 return true;
             }
@@ -2627,7 +2993,8 @@ int main(int argc, char** argv) {
             return false;
         };
 
-        const auto refresh_gamepads = [&] {
+        const auto refresh_gamepads =
+            [&] {
 
             const auto previous_preferred =
                 preferred_gamepad_id;
@@ -2635,7 +3002,10 @@ int main(int argc, char** argv) {
             close_gamepads();
 
             gamepads =
-                starfox::app::open_player_gamepads();
+                starfox::app::
+                    open_player_gamepads();
+
+            rebuild_gamepad_ids();
 
             gamepad =
                 gamepads.empty()
@@ -2643,20 +3013,25 @@ int main(int argc, char** argv) {
                 : gamepads.front();
 
             preferred_gamepad_id =
-                gamepad != nullptr
-                ? SDL_GetGamepadID(gamepad)
-                : SDL_JoystickID{};
+                gamepad_ids.empty()
+                ? SDL_JoystickID{}
+                : gamepad_ids.front();
 
-            if (previous_preferred != 0U) {
+            if (previous_preferred
+                != 0U) {
+
                 static_cast<void>(
                     select_gamepad_by_id(
                         previous_preferred));
             }
 
             if (gamepad == nullptr) {
-                keyboard_control_active = true;
+
+                keyboard_control_active =
+                    true;
             }
         };
+
         starfox::app::InputBindings bindings;
         bindings.load();
         const auto hud_layout_path = starfox::app::hud_layout_settings_path();
@@ -2969,14 +3344,34 @@ int main(int argc, char** argv) {
                     window_focused = false;
                     ex_mouse_input.release();
                 } else if (
-                    event.type == SDL_EVENT_GAMEPAD_ADDED
-                    || event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                    event.type
+                        == SDL_EVENT_GAMEPAD_ADDED
+                    || event.type
+                        == SDL_EVENT_GAMEPAD_REMOVED) {
 
-                    // Defer close/open until SDL_PollEvent has drained the
-                    // complete event batch. This prevents stale SDL_Gamepad
-                    // handles when one controller is disconnected while
-                    // another one is being enumerated.
-                    gamepads_dirty = true;
+                    // STARFOX_GAMEPAD_REMOVAL_GUARD_PASS05
+                    //
+                    // As soon as SDL reports removal, stop exposing
+                    // that raw SDL_Gamepad* to every remaining event
+                    // in this poll batch.
+
+                    if (event.type
+                            == SDL_EVENT_GAMEPAD_REMOVED
+                        && event.gdevice.which
+                            == preferred_gamepad_id) {
+
+                        gamepad =
+                            nullptr;
+
+                        preferred_gamepad_id =
+                            SDL_JoystickID{};
+
+                        keyboard_control_active =
+                            true;
+                    }
+
+                    gamepads_dirty =
+                        true;
                 }
                 if (hud_editor.active) {
                     const auto editor_width = display_width_for(
@@ -3168,7 +3563,7 @@ int main(int argc, char** argv) {
                         == starfox::app::BindingDevice::gamepad
                     && event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
                     && (gamepad == nullptr
-                        || event.gbutton.which == SDL_GetGamepadID(gamepad))) {
+                        || event.gbutton.which == preferred_gamepad_id)) {
                     bindings.bind_gamepad_button(remap_menu.action,
                         static_cast<SDL_GamepadButton>(event.gbutton.button));
                     bindings.save();
@@ -3183,7 +3578,7 @@ int main(int argc, char** argv) {
                     && (event.gaxis.value >= 24'000
                         || event.gaxis.value <= -24'000)
                     && (gamepad == nullptr
-                        || event.gaxis.which == SDL_GetGamepadID(gamepad))) {
+                        || event.gaxis.which == preferred_gamepad_id)) {
                     bindings.bind_gamepad_axis(remap_menu.action,
                         static_cast<SDL_GamepadAxis>(event.gaxis.axis),
                         event.gaxis.value > 0);
@@ -3903,7 +4298,6 @@ int main(int argc, char** argv) {
                 && control_screen_stable_frames
                     >= required_control_screen_stable_frames;
 
-
             // For now the custom visual system is intentionally restricted
             // to the PlayStation controllers currently being implemented.
             //
@@ -3919,8 +4313,8 @@ int main(int argc, char** argv) {
                 : starfox::app::ControlVisualProfile::
                     keyboard_pc;
 
-
-            const auto playstation_control_visual =
+            // STARFOX_HIGH_RES_CONTROLLER_PROFILES_PASS05
+            const auto high_res_control_visual =
                 gamepad != nullptr
                 && (
                     detected_control_profile
@@ -3932,12 +4326,16 @@ int main(int argc, char** argv) {
                         == starfox::app::
                             ControlVisualProfile::
                                 dualsense
-                );
 
+                    || detected_control_profile
+                        == starfox::app::
+                            ControlVisualProfile::
+                                xbox
+                );
 
             const auto custom_control_visual_ready =
                 control_screen_ready
-                && playstation_control_visual;
+                && high_res_control_visual;
             if (!planet_screen && game.map().dots_mode() < 0) {
                 dust_renderer.draw(game.dust(), game.dust_point_count(),
                     camera, view_matrix, superfx_frame);
@@ -5229,13 +5627,16 @@ int main(int argc, char** argv) {
             presentation_effects.planet = planet_presentation;
             presentation_effects.wipe = game.window_wipe_state();
             presentation_effects.clip_circle = controls_screen;
-            // STARFOX_HD_CONTROL_READY_PASS02
-            presentation_effects.high_res_control_overlay =
+            // STARFOX_HD_CONTROL_PROFILE_PASS05
+            presentation_effects.high_res_control_profile =
                 custom_control_visual_ready
-                && detected_control_profile
-                    == starfox::app::
-                        ControlVisualProfile::
-                            dualsense;
+
+                ? std::optional<
+                    starfox::app::
+                        ControlVisualProfile>{
+                            detected_control_profile}
+
+                : std::nullopt;
             presentation_effects.circle_left = static_cast<std::int16_t>(
                 24 + viewport_origin);
             presentation_effects.circle_top = 24;

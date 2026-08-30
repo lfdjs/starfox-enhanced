@@ -69,11 +69,23 @@ find_program(STARFOX_ELF2NRO elf2nro REQUIRED)
 set(switch_nacp "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch.nacp")
 set(switch_nro "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch.nro")
 set(switch_romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
+file(REMOVE_RECURSE "${switch_romfs}")
 file(MAKE_DIRECTORY "${switch_romfs}/control_hints")
-configure_file(
-    "${PROJECT_SOURCE_DIR}/assets/control_hints/dualsense_controls_hd_1024.qoi"
-    "${switch_romfs}/control_hints/dualsense_controls_hd_1024.qoi"
-    COPYONLY)
+# STARFOX_CONTROL_HINT_ROMFS_PASS05
+set(switch_control_hint_sources)
+foreach(control_hint_asset
+    dualsense_controls_white_buttons.qoi
+    dualshock4_controls_corrected.qoi
+    xbox_controls_corrected.qoi)
+
+    list(APPEND switch_control_hint_sources
+        "${PROJECT_SOURCE_DIR}/assets/control_hints/${control_hint_asset}")
+    configure_file(
+        "${PROJECT_SOURCE_DIR}/assets/control_hints/${control_hint_asset}"
+        "${switch_romfs}/control_hints/${control_hint_asset}"
+        COPYONLY)
+
+endforeach()
 add_custom_command(OUTPUT "${switch_nacp}"
     COMMAND "${STARFOX_NACPTOOL}" --create
         "${STARFOX_SWITCH_TITLE}" "${STARFOX_SWITCH_AUTHOR}"
@@ -84,7 +96,7 @@ add_custom_command(OUTPUT "${switch_nro}"
     COMMAND "${STARFOX_ELF2NRO}" "$<TARGET_FILE:starfox_switch>"
         "${switch_nro}" "--nacp=${switch_nacp}"
         "--romfsdir=${switch_romfs}"
-    DEPENDS starfox_switch "${switch_nacp}"
+    DEPENDS starfox_switch "${switch_nacp}" ${switch_control_hint_sources}
     VERBATIM)
 add_custom_target(starfox_switch_nro ALL DEPENDS "${switch_nro}")
 

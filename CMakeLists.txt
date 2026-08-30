@@ -195,6 +195,19 @@ if(STARFOX_BUILD_RUNTIME)
         src/app/control_visual_profile.cpp
         src/app/starfox_pc.cpp
         src/app/runtime_input.cpp)
+    set(starfox_control_hint_assets
+        dualsense_controls_white_buttons.qoi
+        dualshock4_controls_corrected.qoi
+        xbox_controls_corrected.qoi)
+    foreach(control_hint_asset IN LISTS starfox_control_hint_assets)
+        add_custom_command(TARGET starfox_pc POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:starfox_pc>/assets/control_hints"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/control_hints/${control_hint_asset}"
+                "$<TARGET_FILE_DIR:starfox_pc>/assets/control_hints/${control_hint_asset}"
+            VERBATIM)
+    endforeach()
     if(WIN32)
         # The packaged runtime reports failures through a native message box;
         # it should not open a second console window beside the game.
