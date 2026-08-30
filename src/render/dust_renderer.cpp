@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/render/dust_renderer.hpp"
 
 #include <algorithm>
@@ -65,6 +66,10 @@ void DustRenderer::draw(
     const timing::RenderTransform& camera,
     const simulation::MatrixQ15& view_matrix,
     Framebuffer& target) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_dust_draw{
+            starfox::app::perf::Bucket::dust};
+
     constexpr auto q15 = 32'768.0;
     active_count = std::min(active_count, dust.points().size());
     std::size_t index = 0;
@@ -113,6 +118,10 @@ void DustRenderer::draw_grid(
     const timing::RenderTransform& camera,
     const simulation::MatrixQ15& view_matrix,
     Framebuffer& target) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_dust_grid{
+            starfox::app::perf::Bucket::dust};
+
     const auto camera_x = camera_word(camera.x);
     const auto camera_y = camera_word(camera.y);
     const auto camera_z = camera_word(camera.z);
@@ -171,6 +180,10 @@ void DustRenderer::draw_grid_lines(
     const simulation::MatrixQ15& view_matrix,
     std::uint64_t source_frame,
     Framebuffer& target) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_dust_grid_lines{
+            starfox::app::perf::Bucket::dust};
+
     const auto new_source_frame = !grid_line_state_initialized_
         || grid_line_source_frame_ != source_frame;
     if (new_source_frame) {

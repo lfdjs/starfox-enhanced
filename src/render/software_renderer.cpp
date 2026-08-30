@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/render/software_renderer.hpp"
 
 #include "starfox/simulation/math.hpp"
@@ -1238,6 +1239,10 @@ void SoftwareRenderer::draw_cockpit_hud(
     std::int32_t horizontal_origin,
     Framebuffer& target,
     std::uint8_t normal_colour_override) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_software_3d{
+            starfox::app::perf::Bucket::software_3d};
+
     struct HudPoint {
         std::int32_t x{};
         std::int32_t y{};
@@ -1361,6 +1366,10 @@ void SoftwareRenderer::draw(
     const RenderPose& pose,
     Framebuffer& target,
     bool clear_target) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_software_3d{
+            starfox::app::perf::Bucket::software_3d};
+
     if (clear_target) {
         target.clear(settings_.background_colour);
     }

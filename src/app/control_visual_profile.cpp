@@ -1,12 +1,14 @@
 #include "starfox/app/control_visual_profile.hpp"
 
 #include "starfox/render/framebuffer.hpp"
+#include "starfox/render/palette.hpp"
 #include "starfox/render/scaled_text_renderer.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <string>
 
 #if defined(STARFOX_SWITCH_RUNTIME)
@@ -16,6 +18,8 @@
 namespace starfox::app {
 namespace {
 
+#include "dualsense_pixel_art.inc"
+
 constexpr ControlHintBindings keyboard_bindings{
     "ARROWS", "Z FIRE", "X BOMB", "A BOOST", "S BRAKE", "ENTER", "' SELECT"};
 constexpr ControlHintBindings generic_bindings{
@@ -23,29 +27,42 @@ constexpr ControlHintBindings generic_bindings{
 constexpr ControlHintBindings xbox_bindings{
     "LS/DPAD", "A FIRE", "B BOMB", "X BOOST", "Y BRAKE", "MENU", "VIEW"};
 constexpr ControlHintBindings playstation_bindings{
-    "LS/DPAD", "CROSS FIRE", "CIRCLE BOMB", "SQUARE BOOST", "TRIANGLE BRAKE", "OPTIONS", "SHARE"};
+    "MOVE", "X FIRE", "O BOMB", "[] BOOST", "^ BRAKE", "OPTIONS", "SHARE"};
 constexpr ControlHintBindings switch_bindings{
     "LS/DPAD", "B FIRE", "A BOMB", "Y BOOST", "X BRAKE", "+ START", "- SELECT"};
 
 constexpr std::array<ControlHintAnchor, 7> compact_anchors{{
-    {ControlHintAction::movement, 0, 57},
-    {ControlHintAction::fire, 58, 57},
-    {ControlHintAction::bomb, 58, 66},
-    {ControlHintAction::boost, 0, 66},
-    {ControlHintAction::brake, 0, 75},
-    {ControlHintAction::start, 58, 75},
-    {ControlHintAction::select, 58, 84},
+    {ControlHintAction::movement, 0, 58},
+    {ControlHintAction::fire, 58, 49},
+    {ControlHintAction::bomb, 58, 58},
+    {ControlHintAction::boost, 0, 67},
+    {ControlHintAction::brake, 58, 67},
+    {ControlHintAction::start, 0, 76},
+    {ControlHintAction::select, 58, 76},
 }};
 
-constexpr ControlHintLayout make_layout(ControlVisualSprite sprite) {
-    return {sprite, 12, 13, 88, 38, compact_anchors};
+constexpr std::array<ControlHintAnchor, 7> dualsense_anchors{{
+    {ControlHintAction::movement, 0, 80},
+    {ControlHintAction::fire, 76, 16},
+    {ControlHintAction::bomb, 76, 27},
+    {ControlHintAction::boost, 76, 38},
+    {ControlHintAction::brake, 76, 49},
+    {ControlHintAction::start, 0, 76},
+    {ControlHintAction::select, 58, 76},
+}};
+
+constexpr ControlHintLayout make_layout(ControlVisualSprite sprite,
+    std::int16_t x = 10, std::int16_t width = 88,
+    std::int16_t height = 38) {
+    return {sprite, x, 13, width, height, compact_anchors};
 }
 
 constexpr std::array layouts{
     make_layout(ControlVisualSprite::keyboard),
     make_layout(ControlVisualSprite::generic_gamepad),
     make_layout(ControlVisualSprite::dualshock4),
-    make_layout(ControlVisualSprite::dualsense),
+    ControlHintLayout{ControlVisualSprite::dualsense,
+        3, 13, 72, 39, dualsense_anchors},
     make_layout(ControlVisualSprite::xbox),
     make_layout(ControlVisualSprite::switch_pro_controller),
     make_layout(ControlVisualSprite::switch_dual_joycon),
@@ -84,6 +101,54 @@ void draw_button(render::Framebuffer& target, std::int32_t x, std::int32_t y,
     std::uint8_t colour) noexcept {
     fill_rect(target, x + 1, y, 3, 5, colour);
     fill_rect(target, x, y + 1, 5, 3, colour);
+}
+
+std::array<std::uint8_t, 5> mini_glyph(char value) noexcept {
+    switch (value) {
+    case 'A': return {2, 5, 7, 5, 5};
+    case 'B': return {6, 5, 6, 5, 6};
+    case 'D': return {6, 5, 5, 5, 6};
+    case 'E': return {7, 4, 6, 4, 7};
+    case 'F': return {7, 4, 6, 4, 4};
+    case 'I': return {7, 2, 2, 2, 7};
+    case 'K': return {5, 5, 6, 5, 5};
+    case 'L': return {4, 4, 4, 4, 7};
+    case 'M': return {5, 7, 7, 5, 5};
+    case 'N': return {5, 7, 7, 7, 5};
+    case 'O': return {2, 5, 5, 5, 2};
+    case 'P': return {6, 5, 6, 4, 4};
+    case 'R': return {6, 5, 6, 5, 5};
+    case 'S': return {3, 4, 2, 1, 6};
+    case 'T': return {7, 2, 2, 2, 2};
+    case 'U': return {5, 5, 5, 5, 7};
+    case 'V': return {5, 5, 5, 5, 2};
+    case 'X': return {5, 5, 2, 5, 5};
+    case '/': return {1, 1, 2, 4, 4};
+    case '[': return {6, 4, 4, 4, 6};
+    case ']': return {3, 1, 1, 1, 3};
+    case '^': return {2, 5, 0, 0, 0};
+    default: return {};
+    }
+}
+
+std::int32_t measure_mini_text(std::string_view text) noexcept {
+    return text.empty() ? 0 : static_cast<std::int32_t>(text.size() * 4U - 1U);
+}
+
+void draw_mini_text(render::Framebuffer& target, std::string_view text,
+    std::int32_t x, std::int32_t y, std::uint8_t colour) noexcept {
+    for (const auto character : text) {
+        const auto glyph = mini_glyph(character);
+        for (auto row = 0; row < 5; ++row) {
+            for (auto column = 0; column < 3; ++column) {
+                if ((glyph[static_cast<std::size_t>(row)]
+                        & (1U << (2 - column))) != 0U) {
+                    target.set(x + column, y + row, colour);
+                }
+            }
+        }
+        x += 4;
+    }
 }
 
 void draw_gamepad(render::Framebuffer& target, const ControlHintLayout& layout,
@@ -165,6 +230,55 @@ void draw_handheld(render::Framebuffer& target, const ControlHintLayout& layout,
     draw_dpad(target, x + 4, y + 13, outline);
     draw_button(target, x + layout.sprite_width - 12, y + 11, accent);
     draw_button(target, x + layout.sprite_width - 8, y + 18, accent);
+}
+
+void draw_dualsense(render::Framebuffer& target,
+    const ControlHintLayout& layout, std::int32_t origin_x,
+    std::int32_t origin_y,
+    std::span<const render::Rgba8, 256> palette,
+    const std::array<std::uint16_t, 256>& cgram) noexcept {
+    const auto x = origin_x + layout.sprite_x;
+    const auto y = origin_y + layout.sprite_y;
+    static_assert(dualsense_pixel_art_rgba_len == 72U * 48U * 4U);
+    static std::array<std::uint16_t, 256> cached_cgram{};
+    static std::array<std::uint8_t, 72U * 48U> mapped_pixels{};
+    static bool cache_ready{};
+    if (!cache_ready || cached_cgram != cgram) {
+        cached_cgram = cgram;
+        cache_ready = true;
+        for (std::size_t pixel = 0; pixel < mapped_pixels.size(); ++pixel) {
+            const auto offset = pixel * 4U;
+            const auto red = dualsense_pixel_art_rgba[offset];
+            const auto green = dualsense_pixel_art_rgba[offset + 1U];
+            const auto blue = dualsense_pixel_art_rgba[offset + 2U];
+            std::uint8_t colour{};
+            auto closest_distance = std::numeric_limits<std::uint32_t>::max();
+            for (std::size_t index = 0; index < palette.size(); ++index) {
+                const auto delta_r = static_cast<std::int32_t>(red)
+                    - palette[index].r;
+                const auto delta_g = static_cast<std::int32_t>(green)
+                    - palette[index].g;
+                const auto delta_b = static_cast<std::int32_t>(blue)
+                    - palette[index].b;
+                const auto distance = static_cast<std::uint32_t>(
+                    delta_r * delta_r * 3 + delta_g * delta_g * 6
+                    + delta_b * delta_b * 2);
+                if (distance < closest_distance) {
+                    closest_distance = distance;
+                    colour = static_cast<std::uint8_t>(index);
+                }
+            }
+            mapped_pixels[pixel] = colour;
+        }
+    }
+    for (std::size_t pixel = 0; pixel < 72U * 48U; ++pixel) {
+        const auto offset = pixel * 4U;
+        const auto alpha = dualsense_pixel_art_rgba[offset + 3U];
+        if (alpha < 96U) continue;
+        target.set(x + static_cast<std::int32_t>(pixel % 72U),
+            y + static_cast<std::int32_t>(pixel / 72U),
+            mapped_pixels[pixel]);
+    }
 }
 
 std::string_view label_for(const ControlHintBindings& labels,
@@ -265,23 +379,33 @@ std::string_view control_visual_profile_name(ControlVisualProfile profile) noexc
 void draw_control_visual_profile(ControlVisualProfile profile,
     render::Framebuffer& framebuffer,
     const render::ScaledTextRenderer& text_renderer,
-    std::int32_t viewport_origin) noexcept {
-    constexpr std::uint8_t panel = 1U;
+    std::int32_t viewport_origin,
+    const std::array<std::uint16_t, 256>& cgram) noexcept {
     constexpr std::uint8_t body = 4U;
     constexpr std::uint8_t outline = 14U;
     constexpr std::uint8_t accent = 7U;
-    constexpr auto panel_x = 140;
-    constexpr auto panel_y = 20;
-    constexpr auto panel_width = 116;
-    constexpr auto panel_height = 96;
+    // Replace CONT.SCR's original SNES controller and callouts in-place.
+    // Sampling the unobstructed backdrop keeps this host overlay compatible
+    // with every palette variant instead of assuming a fixed colour index.
+    // Coordinates here are cartridge-space coordinates; viewport_origin is
+    // added below exactly once for widescreen presentation.
+    constexpr auto panel_x = 13;
+    constexpr auto panel_y = 118;
+    constexpr auto panel_width = 145;
+    constexpr auto panel_height = 91;
+    constexpr auto content_width = 113;
     const auto x = panel_x + viewport_origin;
     const auto& layout = control_hint_layout(profile);
-    fill_rect(framebuffer, x, panel_y, panel_width, panel_height, panel);
-    outline_rect(framebuffer, x, panel_y, panel_width, panel_height, outline);
+    const auto palette = render::decode_bgr555_palette(cgram);
+    const auto backdrop = framebuffer.get(
+        static_cast<std::uint32_t>(5 + viewport_origin), 210U);
+    fill_rect(framebuffer, x, panel_y, panel_width, panel_height, backdrop);
+    if (profile == ControlVisualProfile::dualsense) return;
     const auto title = control_visual_profile_name(profile);
-    text_renderer.draw_utf8(title,
-        x + panel_width / 2 - text_renderer.measure_utf8(title) / 2,
-        panel_y + 3, framebuffer, outline);
+    static_cast<void>(text_renderer);
+    draw_mini_text(framebuffer, title,
+        x + content_width / 2 - measure_mini_text(title) / 2,
+        panel_y + 3, outline);
 
     switch (layout.sprite) {
     case ControlVisualSprite::keyboard:
@@ -293,6 +417,9 @@ void draw_control_visual_profile(ControlVisualProfile profile,
     case ControlVisualSprite::switch_handheld:
         draw_handheld(framebuffer, layout, x, panel_y, body, outline, accent);
         break;
+    case ControlVisualSprite::dualsense:
+        draw_dualsense(framebuffer, layout, x, panel_y, palette, cgram);
+        break;
     default:
         draw_gamepad(framebuffer, layout, x, panel_y, body, outline, accent, false);
         break;
@@ -300,8 +427,12 @@ void draw_control_visual_profile(ControlVisualProfile profile,
 
     const auto& labels = control_hint_bindings(profile);
     for (const auto& anchor : layout.anchors) {
-        text_renderer.draw_utf8(label_for(labels, anchor.action),
-            x + anchor.x, panel_y + anchor.y, framebuffer, outline);
+        if (anchor.action == ControlHintAction::start
+            || anchor.action == ControlHintAction::select) {
+            continue;
+        }
+        draw_mini_text(framebuffer, label_for(labels, anchor.action),
+            x + anchor.x, panel_y + anchor.y, outline);
     }
 }
 

@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/map_vm.hpp"
 
 #include "starfox/simulation/math.hpp"
@@ -404,16 +405,41 @@ void MapVm::set_player(ObjectHandle player) {
     player_ = player;
 }
 
+
+void MapVm::begin_native_object_batch() {
+    if (native_object_batch_active_) {
+        throw std::logic_error{
+            "native object batch is already active"};
+    }
+
+    // Establish a coherent host -> WRAM snapshot once.
+    sync_objects_to_cpu();
+
+    native_object_batch_active_ =
+        true;
+}
+
+void MapVm::end_native_object_batch() noexcept {
+    native_object_batch_active_ =
+        false;
+}
+
 std::size_t MapVm::call_native_object_routine(
     std::uint32_t address,
     ObjectHandle object,
     std::uint8_t data_bank,
     std::uint8_t status,
     std::size_t instruction_limit) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_native_object{
+            starfox::app::perf::Bucket::sim_native};
+
     if (!objects_->is_active(object)) {
         throw std::invalid_argument{"native routine object handle must be active"};
     }
-    sync_objects_to_cpu();
+    if (!native_object_batch_active_) {
+        sync_objects_to_cpu();
+    }
     Wdc65816Registers registers;
     registers.x = original_object_pointer(object);
     registers.data_bank = data_bank;
@@ -429,6 +455,10 @@ std::size_t MapVm::call_native_routine(
     Wdc65816Registers& registers,
     std::size_t instruction_limit,
     bool service_transfer_flag) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_native_routine{
+            starfox::app::perf::Bucket::sim_native};
+
     sync_objects_to_cpu();
     const auto instructions = cpu_.call_long(
         address, registers, instruction_limit, service_transfer_flag);
@@ -483,6 +513,10 @@ Wdc65816TaskResult MapVm::resume_native_task(
     std::size_t instruction_limit,
     bool service_transfer_flag,
     bool sync_objects) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_native_task{
+            starfox::app::perf::Bucket::sim_native};
+
     const auto result = cpu_.resume_task(registers, stop_addresses,
         instruction_limit, service_transfer_flag);
     // Persistent front-end tasks deliberately borrow object-list scratch
@@ -604,11 +638,68 @@ void MapVm::write_native_object_byte(
 }
 
 void MapVm::sync_objects_to_cpu() {
+    auto work_ram =
+        cpu_.work_ram();
+
+    const auto starfox_work_ram_offset =
+        [](std::uint32_t address) noexcept
+            -> std::size_t {
+
+        const auto bank =
+            static_cast<std::uint8_t>(
+                address >> 16U);
+
+        if (bank == 0x7eU
+            || bank == 0x7fU) {
+
+            return static_cast<std::size_t>(
+                address & 0x1ffffU);
+        }
+
+        // Banks $00-$3f/$80-$bf mirror the first 8 KiB
+        // of WRAM. Native object records and list heads live
+        // in this range.
+        return static_cast<std::size_t>(
+            address & 0x1fffU);
+    };
+
+    const auto starfox_work_ram_write8 =
+        [&work_ram,
+         &starfox_work_ram_offset](
+            std::uint32_t address,
+            std::uint8_t value) noexcept {
+
+        work_ram[
+            starfox_work_ram_offset(
+                address)] =
+            value;
+    };
+
+    const auto starfox_work_ram_write16 =
+        [&starfox_work_ram_write8](
+            std::uint32_t address,
+            std::uint16_t value) noexcept {
+
+        starfox_work_ram_write8(
+            address,
+            static_cast<std::uint8_t>(
+                value));
+
+        starfox_work_ram_write8(
+            address + 1U,
+            static_cast<std::uint8_t>(
+                value >> 8U));
+    };
+
+    starfox::app::perf::ScopedTimer
+        perf_timer_sync_to_cpu{
+            starfox::app::perf::Bucket::sim_sync_to_cpu};
+
     const auto active = objects_->active_handles();
     const auto free = objects_->free_handles();
-    cpu_.write16(active_list_,
+    starfox_work_ram_write16(active_list_,
                  active.empty() ? 0U : original_object_pointer(active.front()));
-    cpu_.write16(free_list_,
+    starfox_work_ram_write16(free_list_,
                  free.empty() ? 0U : static_cast<std::uint16_t>(
                      object_base_ + (free.front() - 1U) * object_size_));
     for (std::size_t index = 0; index < active.size(); ++index) {
@@ -616,68 +707,433 @@ void MapVm::sync_objects_to_cpu() {
         const auto base = static_cast<std::uint32_t>(original_object_pointer(handle));
         const auto extended_base = extended_object_base_
             + static_cast<std::uint32_t>(handle - 1U) * object_size_;
-        cpu_.write16(base, index + 1U < active.size()
+        starfox_work_ram_write16(base, index + 1U < active.size()
             ? original_object_pointer(active[index + 1U]) : 0U);
-        cpu_.write16(base + 2U, index != 0
+        starfox_work_ram_write16(base + 2U, index != 0
             ? original_object_pointer(active[index - 1U]) : 0U);
         for (std::uint16_t offset = 4; offset < object_size_; ++offset) {
-            cpu_.write8(base + offset, read_native_object_byte(handle, offset));
+            starfox_work_ram_write8(base + offset, read_native_object_byte(handle, offset));
         }
         const auto& object = objects_->at(handle);
-        cpu_.write16(base + 6U, original_object_pointer(object.attached));
-        cpu_.write16(base + 25U, original_object_pointer(object.immune_object));
-        cpu_.write16(base + 27U, original_object_pointer(object.collision_object));
+        starfox_work_ram_write16(base + 6U, original_object_pointer(object.attached));
+        starfox_work_ram_write16(base + 25U, original_object_pointer(object.immune_object));
+        starfox_work_ram_write16(base + 27U, original_object_pointer(object.collision_object));
         for (std::size_t offset = 0; offset < extended_object_bytes_; ++offset) {
-            cpu_.write8(extended_base + offset, object.extended[offset]);
+            starfox_work_ram_write8(extended_base + offset, object.extended[offset]);
         }
-        cpu_.write16(extended_base + 19U, original_object_pointer(object.fire_object));
+        starfox_work_ram_write16(extended_base + 19U, original_object_pointer(object.fire_object));
     }
     for (std::size_t index = 0; index < free.size(); ++index) {
         const auto base = static_cast<std::uint32_t>(
             object_base_ + (free[index] - 1U) * object_size_);
         const auto next = index + 1U == free.size() ? 0U : static_cast<std::uint16_t>(
             object_base_ + (free[index + 1U] - 1U) * object_size_);
-        cpu_.write16(base, next);
+        starfox_work_ram_write16(base, next);
     }
 }
 
 void MapVm::sync_objects_from_cpu() {
-    const auto read_list = [this](std::uint16_t pointer) {
-        std::vector<ObjectHandle> result;
-        std::array<bool, kMaximumObjects + 1> seen{};
-        while (pointer != 0) {
-            const auto handle = native_object_handle(pointer);
-            if (handle == 0 || seen[handle]) {
-                throw std::runtime_error{"native 65C816 produced an invalid object list"};
-            }
-            seen[handle] = true;
-            result.push_back(handle);
-            pointer = cpu_.read16(pointer);
+    // PASS11_CHANGE_AWARE_SYNC_FROM
+    //
+    // Native routines normally modify only a small subset of the active
+    // object pool. The old bridge rebuilt both linked lists and rewrote
+    // every semantic byte of every active object after every 65816 call.
+    //
+    // Preserve identical semantics while avoiding redundant host writes:
+    //
+    //  1. read the native active/free lists;
+    //  2. rebuild ObjectPool links only when those lists actually changed;
+    //  3. import only base/extended bytes whose values differ;
+    //  4. always keep semantic mirrors derived from the extended block
+    //     coherent.
+    //
+    // CPU -> host synchronization still occurs after every native call.
+
+    starfox::app::perf::ScopedTimer
+        perf_timer_sync_from_cpu{
+            starfox::app::perf::Bucket::sim_sync_from_cpu};
+
+
+    const auto work_ram =
+        cpu_.work_ram();
+
+
+    const auto starfox_work_ram_offset =
+        [](std::uint32_t address) noexcept
+            -> std::size_t {
+
+        const auto bank =
+            static_cast<std::uint8_t>(
+                address >> 16U);
+
+        if (bank == 0x7eU
+            || bank == 0x7fU) {
+
+            return static_cast<std::size_t>(
+                address & 0x1ffffU);
         }
+
+        // Banks $00-$3f/$80-$bf mirror the first
+        // 8 KiB of SNES WRAM.
+        return static_cast<std::size_t>(
+            address & 0x1fffU);
+    };
+
+
+    const auto starfox_work_ram_read8 =
+        [&work_ram,
+         &starfox_work_ram_offset](
+            std::uint32_t address) noexcept
+            -> std::uint8_t {
+
+        return work_ram[
+            starfox_work_ram_offset(
+                address)];
+    };
+
+
+    const auto starfox_work_ram_read16 =
+        [&starfox_work_ram_read8](
+            std::uint32_t address) noexcept
+            -> std::uint16_t {
+
+        return static_cast<std::uint16_t>(
+            starfox_work_ram_read8(
+                address))
+            | (
+                static_cast<std::uint16_t>(
+                    starfox_work_ram_read8(
+                        address + 1U))
+                << 8U
+            );
+    };
+
+
+    // ========================================================
+    // READ NATIVE LINKED LIST
+    // ========================================================
+
+    const auto read_list =
+        [this,
+         &starfox_work_ram_read16](
+            std::uint16_t pointer) {
+
+        std::vector<ObjectHandle> result;
+
+        result.reserve(
+            object_count_);
+
+        std::array<
+            bool,
+            kMaximumObjects + 1>
+            seen{};
+
+
+        while (pointer != 0U) {
+
+            const auto handle =
+                native_object_handle(
+                    pointer);
+
+            if (handle == 0U
+                || seen[handle]) {
+
+                throw std::runtime_error{
+                    "native 65C816 produced "
+                    "an invalid object list"};
+            }
+
+            seen[handle] =
+                true;
+
+            result.push_back(
+                handle);
+
+            pointer =
+                starfox_work_ram_read16(
+                    pointer);
+        }
+
         return result;
     };
-    auto active = read_list(cpu_.read16(active_list_));
-    auto free = read_list(cpu_.read16(free_list_));
-    if (active.size() + free.size() != object_count_) {
-        throw std::runtime_error{"native active/free lists do not cover the object pool"};
+
+
+    auto active =
+        read_list(
+            starfox_work_ram_read16(
+                active_list_));
+
+    auto free =
+        read_list(
+            starfox_work_ram_read16(
+                free_list_));
+
+
+    if (active.size()
+            + free.size()
+        != object_count_) {
+
+        throw std::runtime_error{
+            "native active/free lists "
+            "do not cover the object pool"};
     }
-    objects_->restore_lists(active, free);
-    for (const auto handle : objects_->active_handles()) {
-        const auto base = static_cast<std::uint32_t>(original_object_pointer(handle));
-        const auto extended_base = extended_object_base_
-            + static_cast<std::uint32_t>(handle - 1U) * object_size_;
-        for (std::uint16_t offset = 4; offset < object_size_; ++offset) {
-            write_native_object_byte(handle, offset, cpu_.read8(base + offset));
+
+
+    // ========================================================
+    // LIST RESTORE ONLY WHEN NECESSARY
+    //
+    // ObjectPool::restore_lists() rebuilds all slot links and scans
+    // the complete pool. Most strategy calls do not modify either
+    // linked list, so avoid that work in the common case.
+    // ========================================================
+
+    const auto current_active =
+        objects_->active_handles();
+
+    const auto current_free =
+        objects_->free_handles();
+
+
+    const bool lists_changed =
+        active != current_active
+        || free != current_free;
+
+
+    if (lists_changed) {
+
+        objects_->restore_lists(
+            active,
+            free);
+    }
+
+
+    // ========================================================
+    // IMPORT ACTIVE OBJECTS
+    // ========================================================
+
+    for (const auto handle :
+         active) {
+
+        const auto base =
+            static_cast<std::uint32_t>(
+                object_base_)
+            + static_cast<std::uint32_t>(
+                handle - 1U)
+                * object_size_;
+
+
+        const auto extended_base =
+            extended_object_base_
+            + static_cast<std::uint32_t>(
+                handle - 1U)
+                * object_size_;
+
+
+        // ====================================================
+        // BASE OBJECT BLOCK
+        //
+        // Pointer fields are imported separately below because the
+        // 65816 stores ALBLKS addresses while GameObject stores handles.
+        // ====================================================
+
+        for (std::uint16_t offset = 4U;
+             offset < object_size_;
+             ++offset) {
+
+            const bool pointer_field =
+                (offset >= 6U
+                    && offset <= 7U)
+
+                || (offset >= 25U
+                    && offset <= 28U);
+
+
+            if (pointer_field) {
+                continue;
+            }
+
+
+            const auto native_value =
+                starfox_work_ram_read8(
+                    base + offset);
+
+
+            if (read_native_object_byte(
+                    handle,
+                    offset)
+                == native_value) {
+
+                continue;
+            }
+
+
+            write_native_object_byte(
+                handle,
+                offset,
+                native_value);
         }
-        auto& object = objects_->at(handle);
-        object.attached = object_handle(cpu_.read16(base + 6U));
-        object.immune_object = object_handle(cpu_.read16(base + 25U));
-        object.collision_object = object_handle(cpu_.read16(base + 27U));
-        for (std::size_t offset = 0; offset < extended_object_bytes_; ++offset) {
-            objects_->write_path_byte(handle, static_cast<std::uint8_t>(0x80U + offset),
-                                      cpu_.read8(extended_base + offset));
+
+
+        auto& object =
+            objects_->at(
+                handle);
+
+
+        // ====================================================
+        // BASE POINTER FIELDS
+        // ====================================================
+
+        const auto attached =
+            object_handle(
+                starfox_work_ram_read16(
+                    base + 6U));
+
+
+        if (object.attached
+            != attached) {
+
+            object.attached =
+                attached;
         }
-        object.fire_object = object_handle(cpu_.read16(extended_base + 19U));
+
+
+        const auto immune_object =
+            object_handle(
+                starfox_work_ram_read16(
+                    base + 25U));
+
+
+        if (object.immune_object
+            != immune_object) {
+
+            object.immune_object =
+                immune_object;
+        }
+
+
+        const auto collision_object =
+            object_handle(
+                starfox_work_ram_read16(
+                    base + 27U));
+
+
+        if (object.collision_object
+            != collision_object) {
+
+            object.collision_object =
+                collision_object;
+        }
+
+
+        // ====================================================
+        // EXTENDED OBJECT BLOCK
+        // ====================================================
+
+        for (std::size_t offset = 0U;
+             offset < extended_object_bytes_;
+             ++offset) {
+
+            const auto native_value =
+                starfox_work_ram_read8(
+                    extended_base
+                    + static_cast<std::uint32_t>(
+                        offset));
+
+
+            if (object.extended[
+                    offset]
+                == native_value) {
+
+                continue;
+            }
+
+
+            objects_->write_path_byte(
+                handle,
+
+                static_cast<std::uint8_t>(
+                    0x80U
+                    + offset),
+
+                native_value);
+        }
+
+
+        // ====================================================
+        // SEMANTIC MIRRORS
+        //
+        // write_path_byte normally maintains these semantic members.
+        // Refreshing them here unconditionally also covers the case
+        // where host-side code changed a semantic field directly while
+        // the backing extended byte itself did not change.
+        // ====================================================
+
+        object.strategy_state =
+            object.extended[18U];
+
+
+        const auto fire_object =
+            object_handle(
+                starfox_work_ram_read16(
+                    extended_base
+                    + 19U));
+
+
+        if (object.fire_object
+            != fire_object) {
+
+            object.fire_object =
+                fire_object;
+        }
+
+
+        const auto ex_shift =
+            object_size_ == 57U
+            ? std::size_t{2U}
+            : std::size_t{};
+
+
+        object.colour_frame =
+            object.extended[
+                28U + ex_shift];
+
+
+        object.animation_frame =
+            object.extended[
+                29U + ex_shift];
+
+
+        object.sound1 =
+            object.extended[
+                30U + ex_shift];
+
+
+        object.sound2 =
+            object.extended[
+                31U + ex_shift];
+
+
+        object.colour_table =
+            static_cast<std::uint16_t>(
+                object.extended[
+                    32U + ex_shift])
+
+            | (
+                static_cast<std::uint16_t>(
+                    object.extended[
+                        33U + ex_shift])
+                << 8U
+            );
+
+
+        object.texture_scroll_x =
+            object.extended[
+                42U + ex_shift];
+
+
+        object.texture_scroll_y =
+            object.extended[
+                43U + ex_shift];
     }
 }
 

@@ -20,6 +20,24 @@ public:
     [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
 
+    // Hot render paths already guarantee that y is inside the framebuffer.
+    // Returning the row once avoids one bounds check and one y*width
+    // multiplication for every individual pixel written by the SNES
+    // background renderer.
+    [[nodiscard]] std::uint8_t* row_data(
+        std::uint32_t y) noexcept {
+
+        return pixels_.data()
+            + static_cast<std::size_t>(y) * width_;
+    }
+
+    [[nodiscard]] const std::uint8_t* row_data(
+        std::uint32_t y) const noexcept {
+
+        return pixels_.data()
+            + static_cast<std::size_t>(y) * width_;
+    }
+
     void resize(std::uint32_t width, std::uint32_t height) {
         if (width == width_ && height == height_) return;
         width_ = width;

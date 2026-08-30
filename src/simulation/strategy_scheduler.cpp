@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/strategy_scheduler.hpp"
 
 #include <stdexcept>
@@ -26,6 +27,29 @@ std::uint32_t ram_symbol(const assets::SymbolMap& symbols, const std::string& na
     throw std::runtime_error{"missing strategy RAM symbol: " + name};
 }
 
+class NativeObjectBatchScope {
+public:
+    explicit NativeObjectBatchScope(
+        MapVm& native_state)
+        : native_state_(&native_state) {
+
+        native_state_->begin_native_object_batch();
+    }
+
+    ~NativeObjectBatchScope() noexcept {
+        native_state_->end_native_object_batch();
+    }
+
+    NativeObjectBatchScope(
+        const NativeObjectBatchScope&) = delete;
+
+    NativeObjectBatchScope& operator=(
+        const NativeObjectBatchScope&) = delete;
+
+private:
+    MapVm* native_state_{};
+};
+
 } // namespace
 
 NativeStrategyScheduler::NativeStrategyScheduler(
@@ -41,6 +65,10 @@ NativeStrategyScheduler::NativeStrategyScheduler(
       game_frame_(ram_symbol(symbols, "GAMEFRAME")) {}
 
 std::size_t NativeStrategyScheduler::begin_tick() {
+    starfox::app::perf::ScopedTimer
+        perf_timer_strategy_begin{
+            starfox::app::perf::Bucket::sim_strategies};
+
     native_state_->write_native_word(
         game_frame_, static_cast<std::uint16_t>(native_state_->read_native_word(game_frame_) + 1U));
     Wdc65816Registers registers;
@@ -84,6 +112,13 @@ std::size_t NativeStrategyScheduler::tick_object(ObjectHandle object) {
 }
 
 StrategyTickStats NativeStrategyScheduler::tick_all() {
+    NativeObjectBatchScope
+        native_object_batch{*native_state_};
+
+    starfox::app::perf::ScopedTimer
+        perf_timer_strategy_all{
+            starfox::app::perf::Bucket::sim_strategies};
+
     StrategyTickStats result;
     auto object = objects_->first_active();
     for (std::size_t guard = 0; object != 0 && guard < 4096; ++guard) {
@@ -110,6 +145,13 @@ StrategyTickStats NativeStrategyScheduler::tick_all() {
 
 StrategyTickStats NativeStrategyScheduler::tick_all_no_objects(
     std::span<const ObjectHandle> protected_objects) {
+    NativeObjectBatchScope
+        native_no_objects_batch{*native_state_};
+
+    starfox::app::perf::ScopedTimer
+        perf_timer_strategy_no_objects{
+            starfox::app::perf::Bucket::sim_strategies};
+
     StrategyTickStats result;
     auto object = objects_->first_active();
     for (std::size_t guard = 0; object != 0 && guard < 4096; ++guard) {

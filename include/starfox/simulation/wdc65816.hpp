@@ -74,6 +74,15 @@ public:
     [[nodiscard]] std::uint16_t read16(std::uint32_t address) const;
     void write8(std::uint32_t address, std::uint8_t value);
     void write16(std::uint32_t address, std::uint16_t value);
+
+    // Direct host view of the SNES work RAM.
+    //
+    // Performance-sensitive compatibility code may use this only for
+    // addresses that are already known to resolve to WRAM. This avoids
+    // repeatedly traversing the generic SystemBus for bulk object-state
+    // synchronization while preserving the exact underlying storage.
+    [[nodiscard]] std::span<std::uint8_t> work_ram() noexcept;
+    [[nodiscard]] std::span<const std::uint8_t> work_ram() const noexcept;
     [[nodiscard]] bool load_cartridge_ram(
         std::span<const std::uint8_t> bytes) noexcept;
     [[nodiscard]] std::span<const std::uint8_t> cartridge_ram() const noexcept;

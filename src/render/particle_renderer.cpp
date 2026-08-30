@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/render/particle_renderer.hpp"
 
 #include <algorithm>
@@ -83,6 +84,10 @@ void ParticleRenderer::draw_owner(
     double interpolation_alpha,
     Framebuffer& target,
     std::uint8_t colour_index_base) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_particles{
+            starfox::app::perf::Bucket::particles};
+
     const auto alpha = std::clamp(interpolation_alpha, 0.0, 1.0);
     for (const auto& particle : particles.particles()) {
         if (particle.life == 0U || particle.owner != owner) continue;

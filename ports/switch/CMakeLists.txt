@@ -68,6 +68,12 @@ find_program(STARFOX_ELF2NRO elf2nro REQUIRED)
 
 set(switch_nacp "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch.nacp")
 set(switch_nro "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch.nro")
+set(switch_romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
+file(MAKE_DIRECTORY "${switch_romfs}/control_hints")
+configure_file(
+    "${PROJECT_SOURCE_DIR}/assets/control_hints/dualsense_controls_hd_1024.qoi"
+    "${switch_romfs}/control_hints/dualsense_controls_hd_1024.qoi"
+    COPYONLY)
 add_custom_command(OUTPUT "${switch_nacp}"
     COMMAND "${STARFOX_NACPTOOL}" --create
         "${STARFOX_SWITCH_TITLE}" "${STARFOX_SWITCH_AUTHOR}"
@@ -77,6 +83,7 @@ add_custom_command(OUTPUT "${switch_nacp}"
 add_custom_command(OUTPUT "${switch_nro}"
     COMMAND "${STARFOX_ELF2NRO}" "$<TARGET_FILE:starfox_switch>"
         "${switch_nro}" "--nacp=${switch_nacp}"
+        "--romfsdir=${switch_romfs}"
     DEPENDS starfox_switch "${switch_nacp}"
     VERBATIM)
 add_custom_target(starfox_switch_nro ALL DEPENDS "${switch_nro}")

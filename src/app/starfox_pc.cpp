@@ -120,7 +120,72 @@ struct PresentationEffects {
     bool black_side_bars{};
     std::int32_t side_bar_left{};
     std::int32_t side_bar_right{};
+    bool high_res_control_overlay{};
 };
+
+struct QoiImage {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::vector<std::uint8_t> rgba;
+};
+
+std::optional<QoiImage> load_qoi(const std::filesystem::path& path) {
+    std::ifstream input{path, std::ios::binary};
+    const std::vector<std::uint8_t> bytes{
+        std::istreambuf_iterator<char>{input}, {}};
+    if (bytes.size() < 22U || bytes[0] != 'q' || bytes[1] != 'o'
+        || bytes[2] != 'i' || bytes[3] != 'f') return std::nullopt;
+    const auto read_be32 = [&bytes](std::size_t offset) {
+        return (static_cast<std::uint32_t>(bytes[offset]) << 24U)
+            | (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U)
+            | (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U)
+            | bytes[offset + 3U];
+    };
+    QoiImage image{read_be32(4U), read_be32(8U), {}};
+    if (image.width == 0U || image.height == 0U
+        || image.width > 4096U || image.height > 4096U) return std::nullopt;
+    image.rgba.resize(static_cast<std::size_t>(image.width) * image.height * 4U);
+    std::array<std::array<std::uint8_t, 4>, 64> index{};
+    std::array<std::uint8_t, 4> pixel{0U, 0U, 0U, 255U};
+    std::size_t cursor = 14U;
+    std::uint8_t run{};
+    for (std::size_t output = 0; output < image.rgba.size(); output += 4U) {
+        if (run != 0U) {
+            --run;
+        } else {
+            if (cursor >= bytes.size()) return std::nullopt;
+            const auto tag = bytes[cursor++];
+            if (tag == 0xfeU) {
+                if (cursor + 3U > bytes.size()) return std::nullopt;
+                pixel[0] = bytes[cursor++]; pixel[1] = bytes[cursor++];
+                pixel[2] = bytes[cursor++];
+            } else if (tag == 0xffU) {
+                if (cursor + 4U > bytes.size()) return std::nullopt;
+                for (auto& component : pixel) component = bytes[cursor++];
+            } else if ((tag & 0xc0U) == 0x00U) {
+                pixel = index[tag & 0x3fU];
+            } else if ((tag & 0xc0U) == 0x40U) {
+                pixel[0] = static_cast<std::uint8_t>(pixel[0] + ((tag >> 4U) & 3U) - 2);
+                pixel[1] = static_cast<std::uint8_t>(pixel[1] + ((tag >> 2U) & 3U) - 2);
+                pixel[2] = static_cast<std::uint8_t>(pixel[2] + (tag & 3U) - 2);
+            } else if ((tag & 0xc0U) == 0x80U) {
+                if (cursor >= bytes.size()) return std::nullopt;
+                const auto next = bytes[cursor++];
+                const auto dg = static_cast<int>(tag & 0x3fU) - 32;
+                pixel[0] = static_cast<std::uint8_t>(pixel[0] + dg + (next >> 4U) - 8);
+                pixel[1] = static_cast<std::uint8_t>(pixel[1] + dg);
+                pixel[2] = static_cast<std::uint8_t>(pixel[2] + dg + (next & 0x0fU) - 8);
+            } else {
+                run = tag & 0x3fU;
+            }
+        }
+        const auto hash = (pixel[0] * 3U + pixel[1] * 5U
+            + pixel[2] * 7U + pixel[3] * 11U) & 63U;
+        index[hash] = pixel;
+        std::copy(pixel.begin(), pixel.end(), image.rgba.begin() + output);
+    }
+    return image;
+}
 
 std::uint32_t display_width_for(
     starfox::simulation::DisplayMode mode) noexcept {
@@ -848,6 +913,8 @@ public:
             texture_,
             SDL_SCALEMODE_NEAREST);
 
+        load_high_res_control_overlay();
+
 #if defined(STARFOX_SWITCH_RUNTIME)
         // The Switch EGL backend establishes swap interval 1 when
         // its GL context is created. Preserve that fixed 60 Hz path.
@@ -884,6 +951,7 @@ public:
     }
 
     ~Window() {
+        SDL_DestroyTexture(control_overlay_texture_);
         SDL_DestroyTexture(texture_);
         SDL_DestroyRenderer(renderer_);
         SDL_DestroyWindow(window_);
@@ -1111,7 +1179,8 @@ public:
                 }
             }
         }
-        present_rgba_pixels(framebuffer.width(), framebuffer.height(), rgba_);
+        present_rgba_pixels(framebuffer.width(), framebuffer.height(), rgba_,
+            effects.high_res_control_overlay);
     }
 
     void present_rgba(std::uint32_t width, std::uint32_t height,
@@ -1121,7 +1190,7 @@ public:
         }
         ensure_dimensions(width, height);
         rgba_.assign(rgba.begin(), rgba.end());
-        present_rgba_pixels(width, height, rgba_);
+        present_rgba_pixels(width, height, rgba_, false);
     }
 
     [[nodiscard]] std::span<const std::uint8_t> rgba() const noexcept {
@@ -1188,6 +1257,41 @@ public:
     }
 
 private:
+    void load_high_res_control_overlay() {
+        std::vector<std::filesystem::path> candidates;
+#if defined(STARFOX_SWITCH_RUNTIME)
+        candidates.emplace_back(
+            "romfs:/control_hints/dualsense_controls_hd_1024.qoi");
+#else
+        candidates.emplace_back(std::filesystem::current_path()
+            / "assets/control_hints/dualsense_controls_hd_1024.qoi");
+        if (const auto* base = SDL_GetBasePath(); base != nullptr) {
+            const auto executable = std::filesystem::path{base};
+            candidates.emplace_back(executable
+                / "assets/control_hints/dualsense_controls_hd_1024.qoi");
+            candidates.emplace_back(executable.parent_path().parent_path()
+                / "assets/control_hints/dualsense_controls_hd_1024.qoi");
+        }
+#endif
+        for (const auto& candidate : candidates) {
+            const auto image = load_qoi(candidate);
+            if (!image) continue;
+            control_overlay_texture_ = SDL_CreateTexture(renderer_,
+                SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
+                static_cast<int>(image->width), static_cast<int>(image->height));
+            if (control_overlay_texture_ == nullptr) continue;
+            if (!SDL_UpdateTexture(control_overlay_texture_, nullptr,
+                    image->rgba.data(), static_cast<int>(image->width * 4U))) {
+                SDL_DestroyTexture(control_overlay_texture_);
+                control_overlay_texture_ = nullptr;
+                continue;
+            }
+            SDL_SetTextureBlendMode(control_overlay_texture_, SDL_BLENDMODE_BLEND);
+            SDL_SetTextureScaleMode(control_overlay_texture_, SDL_SCALEMODE_LINEAR);
+            break;
+        }
+    }
+
     void set_windowed_size(std::uint32_t width, std::uint32_t height) noexcept {
         const auto integer_scale = width <= snes_width
             ? 4U : (width <= widescreen_16_9_width ? 3U : 2U);
@@ -1197,7 +1301,7 @@ private:
     }
 
     void present_rgba_pixels(std::uint32_t width, std::uint32_t height,
-        std::span<const std::uint8_t> rgba) {
+        std::span<const std::uint8_t> rgba, bool high_res_control_overlay) {
         if (!SDL_UpdateTexture(texture_, nullptr, rgba.data(),
                 static_cast<int>(width * 4U))) {
             throw std::runtime_error{std::string{"SDL_UpdateTexture: "} + SDL_GetError()};
@@ -1205,6 +1309,12 @@ private:
         SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, texture_, nullptr, nullptr);
+        if (high_res_control_overlay && control_overlay_texture_ != nullptr) {
+            const SDL_FRect source{0.0F, 260.0F, 1024.0F, 500.0F};
+            const SDL_FRect destination{45.0F, 118.0F, 145.0F, 71.0F};
+            SDL_RenderTexture(renderer_, control_overlay_texture_,
+                &source, &destination);
+        }
         SDL_RenderPresent(renderer_);
     }
     void ensure_dimensions(std::uint32_t width, std::uint32_t height) {
@@ -1235,6 +1345,7 @@ private:
     SDL_Window* window_{};
     SDL_Renderer* renderer_{};
     SDL_Texture* texture_{};
+    SDL_Texture* control_overlay_texture_{};
     std::uint32_t texture_width_{snes_width};
     std::uint32_t texture_height_{snes_height};
     bool relative_mouse_mode_{};
@@ -1655,6 +1766,9 @@ int main(int argc, char** argv) {
 #endif
     try {
         const SdlContext sdl;
+#if defined(STARFOX_SWITCH_RUNTIME)
+        static_cast<void>(romfsInit());
+#endif
         Window window;
 
 #if defined(STARFOX_SWITCH_RUNTIME)
@@ -4245,12 +4359,6 @@ int main(int argc, char** argv) {
             }
             composite_superfx(
                 superfx_frame, 0, scene_offset_y, controls_screen);
-            if (controls_screen) {
-                starfox::app::draw_control_visual_profile(
-                    starfox::app::detect_control_visual_profile(
-                        keyboard_control_active ? nullptr : gamepad),
-                    framebuffer, text_renderer, viewport_origin);
-            }
             if (game.experience()
                     == starfox::simulation::Experience::starfox_ex
                 && gameplay_hud) {
@@ -4379,6 +4487,14 @@ int main(int argc, char** argv) {
                 background_renderer.draw_bg3(
                     ppu, framebuffer, starfox::render::TilePriorityPass::high,
                     viewport_origin, extend_cartridge_scene);
+            }
+            // Draw last on CONT.SCR so the replacement also covers the
+            // original controller's high-priority BG and OBJ callouts.
+            if (controls_screen) {
+                starfox::app::draw_control_visual_profile(
+                    starfox::app::detect_control_visual_profile(
+                        keyboard_control_active ? nullptr : gamepad),
+                    framebuffer, text_renderer, viewport_origin, ppu.cgram);
             }
             if (controls_screen && viewport_origin > 0) {
                 // The controller screen's backdrop is a BG tile colour rather
@@ -4819,6 +4935,10 @@ int main(int argc, char** argv) {
             presentation_effects.planet = planet_presentation;
             presentation_effects.wipe = game.window_wipe_state();
             presentation_effects.clip_circle = controls_screen;
+            presentation_effects.high_res_control_overlay = controls_screen
+                && starfox::app::detect_control_visual_profile(
+                    keyboard_control_active ? nullptr : gamepad)
+                    == starfox::app::ControlVisualProfile::dualsense;
             presentation_effects.circle_left = static_cast<std::int16_t>(
                 24 + viewport_origin);
             presentation_effects.circle_top = 24;

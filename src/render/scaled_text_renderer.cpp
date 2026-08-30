@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/render/scaled_text_renderer.hpp"
 
 #include <algorithm>
@@ -51,6 +52,10 @@ void ScaledTextRenderer::draw(
     const RenderPose& pose,
     Framebuffer& target,
     std::uint8_t colour_index_base) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_draw{
+            starfox::app::perf::Bucket::text};
+
     // A text object may remain in the object list for one update before its
     // message pointer is assigned (Star Fox EX does this during its intro).
     // The Super FX sees the lower half of a LoROM bank as non-ROM/open bus;
@@ -109,6 +114,10 @@ void ScaledTextRenderer::draw_game_text(
     std::optional<std::uint8_t> forced_colour,
     std::int32_t right_clip,
     std::size_t max_characters) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_game{
+            starfox::app::perf::Bucket::text};
+
     // EX can open the portrait/message window one source update before it
     // assigns FRIENDS_MESSAGE. dialogue_state() retains MARIOMSGS' bank, so
     // that transient null pointer arrives here as e.g. $2d:0000 instead of
@@ -194,6 +203,10 @@ void ScaledTextRenderer::draw_face(
     Framebuffer& target,
     std::uint8_t colour_index_base,
     bool alternate_portraits) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_face{
+            starfox::app::perf::Bucket::text};
+
     const auto data = alternate_portraits && face_data_2_ != 0U
         ? face_data_2_ : face_data_;
     const auto frame_address = data + static_cast<std::uint32_t>(frame) * 640U;
@@ -231,6 +244,10 @@ void ScaledTextRenderer::draw_ascii(
     Framebuffer& target,
     std::uint8_t colour,
     std::uint8_t colour_index_base) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_ascii{
+            starfox::app::perf::Bucket::text};
+
     const auto output_colour = static_cast<std::uint8_t>(
         colour_index_base + (colour & 0x0fU));
     for (const auto character : text) {
@@ -445,6 +462,10 @@ void ScaledTextRenderer::draw_utf8(
     Framebuffer& target,
     std::uint8_t colour,
     std::uint8_t colour_index_base) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_utf8{
+            starfox::app::perf::Bucket::text};
+
 
     const auto output_colour = static_cast<std::uint8_t>(
         colour_index_base + (colour & 0x0fU));
@@ -739,6 +760,10 @@ void ScaledTextRenderer::draw_utf8_wrapped(
     std::uint8_t colour_index_base,
     std::int32_t right_clip,
     std::size_t max_lines) const {
+    starfox::app::perf::ScopedTimer
+        perf_timer_text_wrapped{
+            starfox::app::perf::Bucket::text};
+
 
     if (text.empty()
         || max_lines == 0U) {

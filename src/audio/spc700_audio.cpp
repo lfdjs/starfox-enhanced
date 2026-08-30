@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/audio/spc700_audio.hpp"
 
 #include <spc.h>
@@ -236,6 +237,10 @@ Spc700Audio& Spc700Audio::operator=(Spc700Audio&&) noexcept = default;
 
 std::vector<std::int16_t> Spc700Audio::render_logic_tick(
     std::span<const simulation::ApuPortWrite> writes) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_audio{
+            starfox::app::perf::Bucket::audio};
+
     return impl_->render(writes);
 }
 

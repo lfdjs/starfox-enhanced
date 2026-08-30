@@ -106,6 +106,7 @@ void draw_control_visual_profile(
     ControlVisualProfile profile,
     render::Framebuffer& framebuffer,
     const render::ScaledTextRenderer& text_renderer,
-    std::int32_t viewport_origin) noexcept;
+    std::int32_t viewport_origin,
+    const std::array<std::uint16_t, 256>& cgram) noexcept;
 
 } // namespace starfox::app

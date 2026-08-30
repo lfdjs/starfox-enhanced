@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/game_simulation.hpp"
 
 #include "starfox/assets/decrunch.hpp"
@@ -1753,6 +1754,10 @@ double GameSimulation::logic_interpolation_alpha(
 }
 
 void GameSimulation::complete_video_phases_for_tick() {
+    starfox::app::perf::ScopedTimer
+        perf_timer_sim_video{
+            starfox::app::perf::Bucket::sim_video};
+
     const auto video_phases_per_tick = required_video_phases();
     while (video_phases_since_tick_ < video_phases_per_tick) {
         map_.tick_video_phase();
@@ -2790,6 +2795,10 @@ void GameSimulation::begin_planet_selection_sequence() {
 }
 
 void GameSimulation::present_frame() {
+    starfox::app::perf::ScopedTimer
+        perf_timer_presentation_logic{
+            starfox::app::perf::Bucket::presentation_logic};
+
     map_.tick_video_phase();
     if (video_phases_since_tick_ != 0xffU) ++video_phases_since_tick_;
     if (flow_state_ == GameFlowState::intro
@@ -3502,6 +3511,10 @@ void GameSimulation::calculate_view() {
 }
 
 std::size_t GameSimulation::update_view_flags_and_cull() {
+    starfox::app::perf::ScopedTimer
+        perf_timer_sim_view{
+            starfox::app::perf::Bucket::sim_view};
+
     constexpr std::uint8_t view_flag_mask = 0x02U | 0x04U | 0x08U | 0x10U;
     constexpr std::uint8_t front_and_in_view = 0x08U | 0x10U;
     constexpr std::uint8_t left_of_view = 0x04U;
@@ -3592,6 +3605,10 @@ std::size_t GameSimulation::update_view_flags_and_cull() {
 }
 
 GameTickResult GameSimulation::tick(const input::TickInput& input) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_simulation{
+            starfox::app::perf::Bucket::simulation};
+
     if (flow_state_ == GameFlowState::finished) return {};
     complete_video_phases_for_tick();
     if (starfox_ex_cartridge_) {

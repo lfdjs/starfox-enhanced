@@ -32,9 +32,9 @@ int main() {
         == "Z FIRE");
     assert(control_hint_bindings(ControlVisualProfile::xbox).fire == "A FIRE");
     assert(control_hint_bindings(ControlVisualProfile::dualshock4).bomb
-        == "CIRCLE BOMB");
+        == "O BOMB");
     assert(control_hint_bindings(ControlVisualProfile::dualsense).boost
-        == "SQUARE BOOST");
+        == "[] BOOST");
     assert(control_hint_bindings(
         ControlVisualProfile::switch_pro_controller).start == "+ START");
     assert(control_hint_bindings(

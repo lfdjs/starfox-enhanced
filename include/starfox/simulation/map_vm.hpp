@@ -152,6 +152,15 @@ public:
     [[nodiscard]] const std::vector<std::uint8_t>& unsupported_controls() const noexcept {
         return unsupported_controls_;
     }
+    // Batch consecutive native object calls.
+    //
+    // sync_objects_to_cpu() is performed once on entry. Individual
+    // call_native_object_routine() calls still synchronize CPU -> host
+    // afterward, preserving the scheduler's host-side view of active lists,
+    // removals, attachments and strategy state.
+    void begin_native_object_batch();
+    void end_native_object_batch() noexcept;
+
     std::size_t call_native_object_routine(
         std::uint32_t address,
         ObjectHandle object,
@@ -277,6 +286,7 @@ private:
     std::uint32_t map_addresses_address_{0x0017d0U};
     std::uint32_t number_map_loops_address_{0x0017d8U};
     std::uint32_t map_bank_address_{0x001af7U};
+    bool native_object_batch_active_{};
     Wdc65816 cpu_;
 };
 

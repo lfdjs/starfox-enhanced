@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/particle_system.hpp"
 
 #include "starfox/simulation/math.hpp"
@@ -222,6 +223,10 @@ void ParticleSystem::update_particles() {
 }
 
 void ParticleSystem::tick(const ObjectPool& objects, bool enabled) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_sim_particles{
+            starfox::app::perf::Bucket::sim_particle_tick};
+
     if (!enabled) return;
     for (const auto owner : objects.active_handles()) {
         const auto& object = objects.at(owner);

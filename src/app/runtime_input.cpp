@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/app/runtime_input.hpp"
 
 #include "starfox/input/buttons.hpp"
@@ -325,22 +326,155 @@ std::vector<SDL_Gamepad*> open_player_gamepads(std::size_t maximum) noexcept {
 }
 
 std::string gamepad_device_label(SDL_Gamepad* gamepad) {
-    if (gamepad == nullptr) return "NO GAMEPAD";
-    const auto* raw_name = SDL_GetGamepadName(gamepad);
-    const auto name = raw_name == nullptr
-        ? std::string_view{} : std::string_view{raw_name};
-    if (contains(name, "steam deck")) return "STEAM DECK";
-    if (contains(name, "steam virtual")) return "STEAM INPUT";
-    const auto type = SDL_GetGamepadType(gamepad);
-    if (type == SDL_GAMEPAD_TYPE_XBOX360
-        || type == SDL_GAMEPAD_TYPE_XBOXONE
-        || contains(name, "xinput")) return "XINPUT / XBOX";
-    auto result = name.empty() ? std::string{"GAMEPAD"} : std::string{name};
-    std::transform(result.begin(), result.end(), result.begin(),
+    if (gamepad == nullptr) {
+        return "NO GAMEPAD";
+    }
+
+    // STARFOX_STEAM_DECK_VID_PID_FALLBACK
+    //
+    // SDL may expose virtual/native Steam Deck controllers with a
+    // generic gamepad name depending on the backend and SDL version.
+    // Prefer semantic names when available, but also recognize the
+    // Valve Steam Deck USB VID/PID used by the actual device and by
+    // our virtual-controller regression test.
+
+    const auto* raw_name =
+        SDL_GetGamepadName(
+            gamepad);
+
+    const auto name =
+        raw_name == nullptr
+        ? std::string_view{}
+        : std::string_view{
+            raw_name};
+
+
+    auto* joystick =
+        SDL_GetGamepadJoystick(
+            gamepad);
+
+
+    const auto* raw_joystick_name =
+        joystick == nullptr
+        ? nullptr
+        : SDL_GetJoystickName(
+            joystick);
+
+
+    const auto joystick_name =
+        raw_joystick_name == nullptr
+        ? std::string_view{}
+        : std::string_view{
+            raw_joystick_name};
+
+
+    const auto vendor =
+        SDL_GetGamepadVendor(
+            gamepad);
+
+    const auto product =
+        SDL_GetGamepadProduct(
+            gamepad);
+
+
+    constexpr std::uint16_t
+        valve_vendor_id =
+            0x28deU;
+
+    constexpr std::uint16_t
+        steam_deck_product_id =
+            0x1205U;
+
+
+    const auto is_steam_deck =
+        contains(
+            name,
+            "steam deck")
+
+        || contains(
+            joystick_name,
+            "steam deck")
+
+        || (
+            vendor
+                == valve_vendor_id
+
+            && product
+                == steam_deck_product_id
+        );
+
+
+    if (is_steam_deck) {
+        return "STEAM DECK";
+    }
+
+
+    if (contains(
+            name,
+            "steam virtual")
+
+        || contains(
+            joystick_name,
+            "steam virtual")) {
+
+        return "STEAM INPUT";
+    }
+
+
+    const auto type =
+        SDL_GetGamepadType(
+            gamepad);
+
+
+    if (type
+            == SDL_GAMEPAD_TYPE_XBOX360
+
+        || type
+            == SDL_GAMEPAD_TYPE_XBOXONE
+
+        || contains(
+            name,
+            "xinput")
+
+        || contains(
+            joystick_name,
+            "xinput")) {
+
+        return "XINPUT / XBOX";
+    }
+
+
+    auto result =
+        !name.empty()
+        ? std::string{name}
+
+        : !joystick_name.empty()
+        ? std::string{
+            joystick_name}
+
+        : std::string{
+            "GAMEPAD"};
+
+
+    std::transform(
+        result.begin(),
+        result.end(),
+        result.begin(),
+
         [](unsigned char character) {
-            return static_cast<char>(std::toupper(character));
+
+            return static_cast<char>(
+                std::toupper(
+                    character));
         });
-    if (result.size() > 20U) result.resize(20U);
+
+
+    if (result.size() > 20U) {
+        result.resize(
+            20U);
+    }
+
+
     return result;
 }
 
@@ -350,6 +484,10 @@ InputBindings::InputBindings() {
 }
 
 input::ButtonMask InputBindings::sample(SDL_Gamepad* gamepad) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_input_sample{
+            starfox::app::perf::Bucket::input};
+
 #if defined(STARFOX_SWITCH_RUNTIME)
 
     // libnx is the authoritative console input source. Keep SDL gamepad
@@ -385,6 +523,10 @@ input::ButtonMask InputBindings::sample(SDL_Gamepad* gamepad) const noexcept {
 
 input::ButtonMask InputBindings::sample_gamepad_only(
     SDL_Gamepad* gamepad) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_input_gamepad{
+            starfox::app::perf::Bucket::input};
+
     input::ButtonMask result{};
     if (gamepad == nullptr) return result;
     for (std::size_t action = 0; action < action_count; ++action) {
@@ -417,6 +559,10 @@ input::ButtonMask InputBindings::sample_gamepad_only(
 
 input::ButtonMask InputBindings::sample_fixed_menu_navigation(
     SDL_Gamepad* gamepad) const noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_input_menu{
+            starfox::app::perf::Bucket::input};
+
 
 #if defined(STARFOX_SWITCH_RUNTIME)
 

@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/dust_system.hpp"
 
 #include <bit>
@@ -56,6 +57,10 @@ void DustSystem::tick(
     const MatrixQ15& world_matrix,
     bool enabled,
     std::size_t active_count) noexcept {
+    starfox::app::perf::ScopedTimer
+        perf_timer_sim_dust{
+            starfox::app::perf::Bucket::sim_dust_tick};
+
     if (!enabled) return;
     active_count = std::min(active_count, points_.size());
     for (auto& point : std::span{points_}.first(active_count)) {

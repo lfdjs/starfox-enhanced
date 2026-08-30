@@ -1,3 +1,4 @@
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/simulation/wdc65816.hpp"
 
 #include "starfox/assets/decrunch.hpp"
@@ -2241,6 +2242,15 @@ void Wdc65816::write16(std::uint32_t address, std::uint16_t value) {
     write8(address + 1U, static_cast<std::uint8_t>(value >> 8U));
 }
 
+
+std::span<std::uint8_t> Wdc65816::work_ram() noexcept {
+    return impl_->wram;
+}
+
+std::span<const std::uint8_t> Wdc65816::work_ram() const noexcept {
+    return impl_->wram;
+}
+
 bool Wdc65816::load_cartridge_ram(
     std::span<const std::uint8_t> bytes) noexcept {
     if (bytes.size() != impl_->cartridge_ram.size()) return false;
@@ -2390,6 +2400,10 @@ std::size_t Wdc65816::call(
     std::size_t instruction_limit,
     bool service_transfer_flag,
     bool long_return) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_cpu_call{
+            starfox::app::perf::Bucket::sim_cpu_core};
+
     impl_->task_active = false;
     auto& cpu = impl_->cpu;
     cpu.SetRegister("p", registers.status);
@@ -2538,6 +2552,10 @@ Wdc65816TaskResult Wdc65816::run_task(
     std::span<const std::uint32_t> stop_addresses,
     std::size_t instruction_limit,
     bool service_transfer_flag) {
+    starfox::app::perf::ScopedTimer
+        perf_timer_cpu_task{
+            starfox::app::perf::Bucket::sim_cpu_core};
+
     auto& cpu = impl_->cpu;
     Wdc65816TaskResult result;
     std::array<std::uint32_t, 32> recent_program_counters{};

@@ -1,4 +1,5 @@
 #include "starfox/render/framebuffer.hpp"
+#include "starfox/app/perf_profiler.hpp"
 #include "starfox/render/palette.hpp"
 
 #include <array>
@@ -27,47 +28,258 @@ void write_u32(std::ofstream& output, std::uint32_t value) {
 
 } // namespace
 
-void composite_transparent_layer(const Framebuffer& source,
-    Framebuffer& destination, const LayerCompositeSettings& settings) noexcept {
-    const auto mosaic_enabled = settings.mosaic_layer_mask != 0U
-        && (settings.mosaic & settings.mosaic_layer_mask) != 0U;
-    const auto mosaic_size = static_cast<std::int32_t>(
-        (settings.mosaic >> 4U) + 1U);
-    for (std::uint32_t y = 0; y < source.height(); ++y) {
-        for (std::uint32_t x = 0; x < source.width(); ++x) {
-            const auto destination_x = static_cast<std::int32_t>(x)
-                + settings.offset_x;
-            const auto destination_y = static_cast<std::int32_t>(y)
-                + settings.offset_y;
-            if (destination_x < settings.clip_left
-                || destination_x >= settings.clip_right
-                || destination_y < settings.clip_top
-                || destination_y >= settings.clip_bottom) {
+void composite_transparent_layer(
+    const Framebuffer& source,
+    Framebuffer& destination,
+    const LayerCompositeSettings& settings) noexcept {
+
+    starfox::app::perf::ScopedTimer
+        perf_timer_composite{
+            starfox::app::perf::Bucket::composite};
+
+    const auto source_width =
+        static_cast<std::int32_t>(
+            source.width());
+
+    const auto source_height =
+        static_cast<std::int32_t>(
+            source.height());
+
+    const auto destination_width =
+        static_cast<std::int32_t>(
+            destination.width());
+
+    const auto destination_height =
+        static_cast<std::int32_t>(
+            destination.height());
+
+    const auto mosaic_enabled =
+        settings.mosaic_layer_mask != 0U
+        && (settings.mosaic
+            & settings.mosaic_layer_mask)
+            != 0U;
+
+    // ========================================================
+    // COMMON FAST PATH
+    //
+    // Most gameplay layers have mosaic disabled.
+    //
+    // The old implementation scanned the complete source and,
+    // for every pixel:
+    //
+    //   - recalculated destination_x/y
+    //   - checked four clip comparisons
+    //   - called source.get()
+    //   - called destination.set()
+    //
+    // Clip the rectangle once, acquire row pointers once per
+    // scanline, and copy only non-transparent source pixels.
+    // ========================================================
+
+    if (!mosaic_enabled) {
+
+        const auto destination_left =
+            std::max({
+                0,
+                settings.clip_left,
+                settings.offset_x});
+
+        const auto destination_top =
+            std::max({
+                0,
+                settings.clip_top,
+                settings.offset_y});
+
+        const auto destination_right =
+            std::min({
+                destination_width,
+                settings.clip_right,
+                settings.offset_x
+                    + source_width});
+
+        const auto destination_bottom =
+            std::min({
+                destination_height,
+                settings.clip_bottom,
+                settings.offset_y
+                    + source_height});
+
+        if (destination_left
+                >= destination_right
+            || destination_top
+                >= destination_bottom) {
+
+            return;
+        }
+
+        const auto source_left =
+            destination_left
+            - settings.offset_x;
+
+        const auto copy_width =
+            destination_right
+            - destination_left;
+
+        for (auto destination_y =
+                 destination_top;
+             destination_y
+                 < destination_bottom;
+             ++destination_y) {
+
+            const auto source_y =
+                destination_y
+                - settings.offset_y;
+
+            const auto* source_row =
+                source.row_data(
+                    static_cast<
+                        std::uint32_t>(
+                            source_y));
+
+            auto* destination_row =
+                destination.row_data(
+                    static_cast<
+                        std::uint32_t>(
+                            destination_y));
+
+            const auto* src =
+                source_row
+                + source_left;
+
+            auto* dst =
+                destination_row
+                + destination_left;
+
+            for (auto column = 0;
+                 column < copy_width;
+                 ++column) {
+
+                const auto colour =
+                    src[column];
+
+                if (colour != 0U) {
+                    dst[column] =
+                        colour;
+                }
+            }
+        }
+
+        return;
+    }
+
+    // ========================================================
+    // MOSAIC PATH
+    //
+    // Mosaic requires sampling a different source coordinate,
+    // but clipping and destination row access can still be
+    // moved outside the inner pixel work.
+    // ========================================================
+
+    const auto mosaic_size =
+        static_cast<std::int32_t>(
+            (settings.mosaic >> 4U)
+            + 1U);
+
+    const auto destination_left =
+        std::max(
+            0,
+            settings.clip_left);
+
+    const auto destination_top =
+        std::max(
+            0,
+            settings.clip_top);
+
+    const auto destination_right =
+        std::min(
+            destination_width,
+            settings.clip_right);
+
+    const auto destination_bottom =
+        std::min(
+            destination_height,
+            settings.clip_bottom);
+
+    if (destination_left
+            >= destination_right
+        || destination_top
+            >= destination_bottom) {
+
+        return;
+    }
+
+    for (auto destination_y =
+             destination_top;
+         destination_y
+             < destination_bottom;
+         ++destination_y) {
+
+        const auto logical_y =
+            destination_y
+            - settings.mosaic_origin_y;
+
+        const auto sampled_logical_y =
+            mosaic_coordinate(
+                logical_y,
+                mosaic_size);
+
+        const auto source_y =
+            sampled_logical_y
+            + settings.mosaic_origin_y
+            - settings.offset_y;
+
+        if (source_y < 0
+            || source_y >= source_height) {
+
+            continue;
+        }
+
+        const auto* source_row =
+            source.row_data(
+                static_cast<
+                    std::uint32_t>(
+                        source_y));
+
+        auto* destination_row =
+            destination.row_data(
+                static_cast<
+                    std::uint32_t>(
+                        destination_y));
+
+        for (auto destination_x =
+                 destination_left;
+             destination_x
+                 < destination_right;
+             ++destination_x) {
+
+            const auto logical_x =
+                destination_x
+                - settings.mosaic_origin_x;
+
+            const auto sampled_logical_x =
+                mosaic_coordinate(
+                    logical_x,
+                    mosaic_size);
+
+            const auto source_x =
+                sampled_logical_x
+                + settings.mosaic_origin_x
+                - settings.offset_x;
+
+            if (source_x < 0
+                || source_x >= source_width) {
+
                 continue;
             }
 
-            auto source_x = static_cast<std::int32_t>(x);
-            auto source_y = static_cast<std::int32_t>(y);
-            if (mosaic_enabled) {
-                const auto logical_x = destination_x
-                    - settings.mosaic_origin_x;
-                const auto logical_y = destination_y
-                    - settings.mosaic_origin_y;
-                source_x = mosaic_coordinate(logical_x, mosaic_size)
-                    + settings.mosaic_origin_x - settings.offset_x;
-                source_y = mosaic_coordinate(logical_y, mosaic_size)
-                    + settings.mosaic_origin_y - settings.offset_y;
-                if (source_x < 0 || source_y < 0
-                    || source_x >= static_cast<std::int32_t>(source.width())
-                    || source_y >= static_cast<std::int32_t>(source.height())) {
-                    continue;
-                }
-            }
-            const auto colour = source.get(
-                static_cast<std::uint32_t>(source_x),
-                static_cast<std::uint32_t>(source_y));
+            const auto colour =
+                source_row[source_x];
+
             if (colour != 0U) {
-                destination.set(destination_x, destination_y, colour);
+
+                destination_row[
+                    destination_x] =
+                    colour;
             }
         }
     }
