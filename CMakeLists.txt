@@ -192,6 +192,7 @@ if(STARFOX_BUILD_RUNTIME)
     FetchContent_MakeAvailable(SDL3)
 
     add_executable(starfox_pc
+        src/app/control_visual_profile.cpp
         src/app/starfox_pc.cpp
         src/app/runtime_input.cpp)
     if(WIN32)
@@ -355,6 +356,14 @@ if(STARFOX_BUILD_TESTS)
     add_test(NAME starfox_simulation_tests COMMAND starfox_simulation_tests)
 
     if(STARFOX_BUILD_RUNTIME)
+        add_executable(starfox_control_visual_profile_tests
+            tests/control_visual_profile_tests.cpp
+            src/app/control_visual_profile.cpp)
+        target_link_libraries(starfox_control_visual_profile_tests
+            PRIVATE starfox_core SDL3::SDL3)
+        add_test(NAME starfox_control_visual_profile_tests
+            COMMAND starfox_control_visual_profile_tests)
+
         add_executable(starfox_runtime_input_tests
             tests/runtime_input_tests.cpp
             src/app/runtime_input.cpp)

@@ -9,12 +9,54 @@ if(NOT TARGET SDL3::SDL3)
 endif()
 
 add_executable(starfox_switch
+    ${PROJECT_SOURCE_DIR}/src/app/control_visual_profile.cpp
     ${PROJECT_SOURCE_DIR}/src/app/starfox_pc.cpp
     ${PROJECT_SOURCE_DIR}/src/app/runtime_input.cpp)
 target_compile_definitions(starfox_switch PRIVATE
     STARFOX_SWITCH_RUNTIME=1
     __SWITCH__=1)
 target_link_libraries(starfox_switch PRIVATE starfox_core SDL3::SDL3)
+
+# Temporary Switch performance profiler. Keep the same profiler
+# configuration in the core and application translation units so
+# the shared inline counters form one process-wide data set.
+target_compile_definitions(
+    starfox_core
+    PRIVATE
+        STARFOX_PERF_PROFILER=1
+        STARFOX_PERF_SWITCH=1)
+
+target_compile_definitions(
+    starfox_switch
+    PRIVATE
+        STARFOX_PERF_PROFILER=1
+        STARFOX_PERF_SWITCH=1)
+
+# The Switch runtime spends most of its time in the software SNES/Super FX
+# presentation path. Enable whole-program optimisation for project-owned code
+# in Release builds; prebuilt SDL/libnx libraries remain ordinary link inputs.
+include(CheckIPOSupported)
+
+check_ipo_supported(
+    RESULT STARFOX_SWITCH_IPO_SUPPORTED
+    OUTPUT STARFOX_SWITCH_IPO_ERROR
+    LANGUAGES CXX)
+
+if(STARFOX_SWITCH_IPO_SUPPORTED)
+    set_property(
+        TARGET starfox_core
+        PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+
+    set_property(
+        TARGET starfox_switch
+        PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+
+    message(STATUS
+        "Star Fox Switch: interprocedural optimisation enabled")
+else()
+    message(STATUS
+        "Star Fox Switch: IPO unavailable: ${STARFOX_SWITCH_IPO_ERROR}")
+endif()
 
 set(STARFOX_SWITCH_TITLE "Star Fox Enhanced" CACHE STRING
     "Nintendo Switch application title")

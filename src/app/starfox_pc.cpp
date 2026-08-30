@@ -1,3 +1,5 @@
+#include "starfox/app/perf_profiler.hpp"
+#include "starfox/app/control_visual_profile.hpp"
 #include "starfox/audio/spc700_audio.hpp"
 #include "starfox/app/runtime_input.hpp"
 #include "starfox/app/platform_profile.hpp"
@@ -2382,6 +2384,7 @@ int main(int argc, char** argv) {
         AudioOutput audio;
         auto gamepads = starfox::app::open_player_gamepads();
         SDL_Gamepad* gamepad = gamepads.empty() ? nullptr : gamepads.front();
+        bool keyboard_control_active = gamepad == nullptr;
         const auto close_gamepads = [&] {
             for (auto* opened : gamepads) {
                 if (opened != nullptr) SDL_CloseGamepad(opened);
@@ -2393,6 +2396,7 @@ int main(int argc, char** argv) {
             close_gamepads();
             gamepads = starfox::app::open_player_gamepads();
             gamepad = gamepads.empty() ? nullptr : gamepads.front();
+            if (gamepad == nullptr) keyboard_control_active = true;
         };
         starfox::app::InputBindings bindings;
         bindings.load();
@@ -2608,11 +2612,21 @@ int main(int argc, char** argv) {
             std::chrono::milliseconds{250}};
         live_fps.reset(raster_timestamp, game.presentation_fps());
         while (running) {
+            starfox::app::perf::begin_frame();
+
             bool toggle_frame_freeze{};
             bool step_frame_forward{};
             bool step_frame_backward{};
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+                    keyboard_control_active = true;
+                } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
+                           || (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION
+                               && (event.gaxis.value >= 16'000
+                                   || event.gaxis.value <= -16'000))) {
+                    keyboard_control_active = false;
+                }
                 const auto fullscreen_key =
                     event.type == SDL_EVENT_KEY_DOWN
                     && !event.key.repeat
@@ -4231,6 +4245,12 @@ int main(int argc, char** argv) {
             }
             composite_superfx(
                 superfx_frame, 0, scene_offset_y, controls_screen);
+            if (controls_screen) {
+                starfox::app::draw_control_visual_profile(
+                    starfox::app::detect_control_visual_profile(
+                        keyboard_control_active ? nullptr : gamepad),
+                    framebuffer, text_renderer, viewport_origin);
+            }
             if (game.experience()
                     == starfox::simulation::Experience::starfox_ex
                 && gameplay_hud) {
@@ -4812,10 +4832,30 @@ int main(int argc, char** argv) {
                         - live_fps_overlay.width() - 4U);
                 presentation_effects.host_overlay_y = 4;
             }
-            window.present(
-                framebuffer, palette, circle, presentation_effects);
-            presentation_history.record(
-                framebuffer.width(), framebuffer.height(), window.rgba());
+            {
+                starfox::app::perf::ScopedTimer
+                    perf_timer_present{
+                        starfox::app::perf::Bucket::present};
+
+                window.present(
+                    framebuffer,
+                    palette,
+                    circle,
+                    presentation_effects);
+            }
+
+            {
+                starfox::app::perf::ScopedTimer
+                    perf_timer_history{
+                        starfox::app::perf::Bucket::history};
+
+                presentation_history.record(
+                    framebuffer.width(),
+                    framebuffer.height(),
+                    window.rgba());
+            }
+
+            starfox::app::perf::end_frame();
             if (advance_frozen_frame) {
                 window.set_frame_debug_status(true,
                     presentation_history.cursor(),
