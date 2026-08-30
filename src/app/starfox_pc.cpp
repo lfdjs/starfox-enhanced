@@ -1179,8 +1179,23 @@ public:
                 }
             }
         }
-        present_rgba_pixels(framebuffer.width(), framebuffer.height(), rgba_,
-            effects.high_res_control_overlay);
+        // STARFOX_CONTROL_OVERLAY_WIPE_FIX
+        //
+        // The HD controller texture is rendered by SDL after the indexed
+        // framebuffer has already gone through the cartridge window wipe.
+        // Rendering it while the wipe is active makes the controller appear
+        // before CONT.SCR itself. Keep it hidden until that transition has
+        // finished; the ordinary framebuffer artwork continues to obey the
+        // cartridge masking normally.
+        const auto show_high_res_control_overlay =
+            effects.high_res_control_overlay
+            && !effects.wipe.active;
+
+        present_rgba_pixels(
+            framebuffer.width(),
+            framebuffer.height(),
+            rgba_,
+            show_high_res_control_overlay);
     }
 
     void present_rgba(std::uint32_t width, std::uint32_t height,
@@ -1310,11 +1325,73 @@ private:
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, texture_, nullptr, nullptr);
         if (high_res_control_overlay && control_overlay_texture_ != nullptr) {
-            const SDL_FRect source{0.0F, 260.0F, 1024.0F, 500.0F};
-            const SDL_FRect destination{45.0F, 118.0F, 145.0F, 71.0F};
-            SDL_RenderTexture(renderer_, control_overlay_texture_,
-                &source, &destination);
+
+            // STARFOX_DUALSENSE_PANEL_ALIGNMENT_PASS04
+            //
+            // CONT.SCR already reserves the cartridge-space rectangle:
+            //
+            //   x      = 13
+            //   y      = 118
+            //   width  = 145
+            //
+            // Widescreen adds viewport_origin to cartridge coordinates.
+            //
+            // Anchor the complete HD artwork to that exact panel instead of
+            // centring it against the complete 16:9/21:9 framebuffer.
+
+            constexpr float cartridge_width =
+                256.0F;
+
+            constexpr float panel_x =
+                13.0F;
+
+            constexpr float panel_y =
+                118.0F;
+
+            constexpr float panel_width =
+                145.0F;
+
+            constexpr float panel_height =
+                71.0F;
+
+
+            const auto viewport_origin =
+                width > static_cast<std::uint32_t>(
+                    cartridge_width)
+
+                ? (
+                    static_cast<float>(width)
+                    - cartridge_width
+                  ) * 0.5F
+
+                : 0.0F;
+
+
+            // The supplied 1024x1024 image has its complete controller/help
+            // composition inside this source slice.
+            const SDL_FRect source{
+                0.0F,
+                260.0F,
+                1024.0F,
+                500.0F
+            };
+
+
+            const SDL_FRect destination{
+                viewport_origin + panel_x,
+                panel_y,
+                panel_width,
+                panel_height
+            };
+
+
+            SDL_RenderTexture(
+                renderer_,
+                control_overlay_texture_,
+                &source,
+                &destination);
         }
+
         SDL_RenderPresent(renderer_);
     }
     void ensure_dimensions(std::uint32_t width, std::uint32_t height) {
@@ -2498,19 +2575,87 @@ int main(int argc, char** argv) {
         AudioOutput audio;
         auto gamepads = starfox::app::open_player_gamepads();
         SDL_Gamepad* gamepad = gamepads.empty() ? nullptr : gamepads.front();
+
+        // STARFOX_DEFERRED_GAMEPAD_HOTPLUG
+        //
+        // SDL can deliver removal/addition plus button/axis events in the
+        // same poll batch. Never destroy SDL_Gamepad handles while that batch
+        // is still being consumed.
+        SDL_JoystickID preferred_gamepad_id =
+            gamepad != nullptr
+            ? SDL_GetGamepadID(gamepad)
+            : SDL_JoystickID{};
+
         bool keyboard_control_active = gamepad == nullptr;
+
         const auto close_gamepads = [&] {
             for (auto* opened : gamepads) {
-                if (opened != nullptr) SDL_CloseGamepad(opened);
+                if (opened != nullptr) {
+                    SDL_CloseGamepad(opened);
+                }
             }
+
             gamepads.clear();
             gamepad = nullptr;
         };
+
+        const auto select_gamepad_by_id =
+            [&](SDL_JoystickID identifier) noexcept {
+
+            if (identifier == 0U) {
+                return false;
+            }
+
+            for (auto* opened : gamepads) {
+
+                if (opened == nullptr) {
+                    continue;
+                }
+
+                if (SDL_GetGamepadID(opened)
+                    != identifier) {
+
+                    continue;
+                }
+
+                gamepad = opened;
+                preferred_gamepad_id = identifier;
+
+                return true;
+            }
+
+            return false;
+        };
+
         const auto refresh_gamepads = [&] {
+
+            const auto previous_preferred =
+                preferred_gamepad_id;
+
             close_gamepads();
-            gamepads = starfox::app::open_player_gamepads();
-            gamepad = gamepads.empty() ? nullptr : gamepads.front();
-            if (gamepad == nullptr) keyboard_control_active = true;
+
+            gamepads =
+                starfox::app::open_player_gamepads();
+
+            gamepad =
+                gamepads.empty()
+                ? nullptr
+                : gamepads.front();
+
+            preferred_gamepad_id =
+                gamepad != nullptr
+                ? SDL_GetGamepadID(gamepad)
+                : SDL_JoystickID{};
+
+            if (previous_preferred != 0U) {
+                static_cast<void>(
+                    select_gamepad_by_id(
+                        previous_preferred));
+            }
+
+            if (gamepad == nullptr) {
+                keyboard_control_active = true;
+            }
         };
         starfox::app::InputBindings bindings;
         bindings.load();
@@ -2687,6 +2832,13 @@ int main(int argc, char** argv) {
         bool suppress_fullscreen_start{};
         double last_phase_fraction{};
 
+        // STARFOX_CONTROL_SCREEN_STABLE_COUNTER
+        //
+        // GameFlowState switches to CONT.SCR before every visual transition
+        // affecting that screen has necessarily completed. Delay only the
+        // host replacement artwork, never cartridge logic.
+        std::uint32_t control_screen_stable_frames{};
+
         // Open and synchronize the native window before the cartridge flow
         // begins. This leaves a stable one-and-a-half-second black preroll instead of
         // allowing ROM loading or the first APU upload to race the desktop
@@ -2731,15 +2883,54 @@ int main(int argc, char** argv) {
             bool toggle_frame_freeze{};
             bool step_frame_forward{};
             bool step_frame_backward{};
+
+            bool gamepads_dirty{};
+            SDL_JoystickID requested_gamepad_id{};
+
             SDL_Event event;
+
             while (SDL_PollEvent(&event)) {
-                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+
+                if (event.type == SDL_EVENT_KEY_DOWN
+                    && !event.key.repeat) {
+
                     keyboard_control_active = true;
-                } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
-                           || (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION
-                               && (event.gaxis.value >= 16'000
-                                   || event.gaxis.value <= -16'000))) {
+
+                } else if (
+                    event.type
+                        == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+
                     keyboard_control_active = false;
+
+                    requested_gamepad_id =
+                        event.gbutton.which;
+
+                    // If the device was already open, changing the active
+                    // gamepad needs no close/reopen and is safe immediately.
+                    if (!gamepads_dirty) {
+                        static_cast<void>(
+                            select_gamepad_by_id(
+                                requested_gamepad_id));
+                    }
+
+                } else if (
+                    event.type
+                        == SDL_EVENT_GAMEPAD_AXIS_MOTION
+                    && (
+                        event.gaxis.value >= 16'000
+                        || event.gaxis.value <= -16'000
+                    )) {
+
+                    keyboard_control_active = false;
+
+                    requested_gamepad_id =
+                        event.gaxis.which;
+
+                    if (!gamepads_dirty) {
+                        static_cast<void>(
+                            select_gamepad_by_id(
+                                requested_gamepad_id));
+                    }
                 }
                 const auto fullscreen_key =
                     event.type == SDL_EVENT_KEY_DOWN
@@ -2777,16 +2968,15 @@ int main(int argc, char** argv) {
                 } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
                     window_focused = false;
                     ex_mouse_input.release();
-                } else if (event.type == SDL_EVENT_GAMEPAD_ADDED
-                           || event.type == SDL_EVENT_GAMEPAD_REMOVED) {
-                    refresh_gamepads();
-                    for (std::size_t player = 0;
-                         player < secondary_inputs.size(); ++player) {
-                        const auto held = player + 1U < gamepads.size()
-                            ? bindings.sample_gamepad_only(gamepads[player + 1U])
-                            : starfox::input::ButtonMask{};
-                        secondary_inputs[player].reset(held);
-                    }
+                } else if (
+                    event.type == SDL_EVENT_GAMEPAD_ADDED
+                    || event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+
+                    // Defer close/open until SDL_PollEvent has drained the
+                    // complete event batch. This prevents stale SDL_Gamepad
+                    // handles when one controller is disconnected while
+                    // another one is being enumerated.
+                    gamepads_dirty = true;
                 }
                 if (hud_editor.active) {
                     const auto editor_width = display_width_for(
@@ -3002,6 +3192,39 @@ int main(int argc, char** argv) {
                     remap_input.reset(
                         bindings.sample_fixed_menu_navigation(gamepad));
                 }
+            }
+
+            // STARFOX_GAMEPAD_REFRESH_AFTER_EVENT_BATCH
+            //
+            // All pointers remain alive until the event queue is empty.
+            // Only now is it safe to rebuild the SDL gamepad list.
+            if (gamepads_dirty) {
+
+                refresh_gamepads();
+
+                for (std::size_t player = 0;
+                     player < secondary_inputs.size();
+                     ++player) {
+
+                    const auto held =
+                        player + 1U < gamepads.size()
+
+                        ? bindings.sample_gamepad_only(
+                            gamepads[player + 1U])
+
+                        : starfox::input::ButtonMask{};
+
+                    secondary_inputs[player].reset(
+                        held);
+                }
+            }
+
+            // A newly attached device might not have existed in gamepads
+            // when its first input event arrived. Select it after refresh.
+            if (requested_gamepad_id != 0U) {
+                static_cast<void>(
+                    select_gamepad_by_id(
+                        requested_gamepad_id));
             }
 
             if (!running) break;
@@ -3649,6 +3872,72 @@ int main(int argc, char** argv) {
                     == starfox::simulation::GameFlowState::controls_type
                 || game.flow_state()
                     == starfox::simulation::GameFlowState::controls_choice;
+
+            // STARFOX_CONTROL_SCREEN_READY_PASS02
+            //
+            // Do not let host artwork race the cartridge transition.
+            const auto controls_wipe_active =
+                game.window_wipe_state().active;
+
+            if (controls_screen
+                && !controls_wipe_active) {
+
+                control_screen_stable_frames =
+                    std::min<std::uint32_t>(
+                        control_screen_stable_frames + 1U,
+                        255U);
+
+            } else {
+
+                control_screen_stable_frames =
+                    0U;
+            }
+
+            constexpr std::uint32_t
+                required_control_screen_stable_frames =
+                    3U;
+
+            const auto control_screen_ready =
+                controls_screen
+                && !controls_wipe_active
+                && control_screen_stable_frames
+                    >= required_control_screen_stable_frames;
+
+
+            // For now the custom visual system is intentionally restricted
+            // to the PlayStation controllers currently being implemented.
+            //
+            // Keyboard input remains fully functional, but it does NOT cause
+            // an artwork/profile transition yet. If no supported controller
+            // is active, CONT.SCR keeps its original cartridge artwork.
+            const auto detected_control_profile =
+                gamepad != nullptr
+
+                ? starfox::app::detect_control_visual_profile(
+                    gamepad)
+
+                : starfox::app::ControlVisualProfile::
+                    keyboard_pc;
+
+
+            const auto playstation_control_visual =
+                gamepad != nullptr
+                && (
+                    detected_control_profile
+                        == starfox::app::
+                            ControlVisualProfile::
+                                dualshock4
+
+                    || detected_control_profile
+                        == starfox::app::
+                            ControlVisualProfile::
+                                dualsense
+                );
+
+
+            const auto custom_control_visual_ready =
+                control_screen_ready
+                && playstation_control_visual;
             if (!planet_screen && game.map().dots_mode() < 0) {
                 dust_renderer.draw(game.dust(), game.dust_point_count(),
                     camera, view_matrix, superfx_frame);
@@ -4488,13 +4777,18 @@ int main(int argc, char** argv) {
                     ppu, framebuffer, starfox::render::TilePriorityPass::high,
                     viewport_origin, extend_cartridge_scene);
             }
-            // Draw last on CONT.SCR so the replacement also covers the
-            // original controller's high-priority BG and OBJ callouts.
-            if (controls_screen) {
+            // STARFOX_PLAYSTATION_VISUAL_ONLY_PASS02
+            //
+            // Draw only after CONT.SCR is genuinely visible. Keyboard input
+            // does not participate in visual-profile switching yet.
+            if (custom_control_visual_ready) {
+
                 starfox::app::draw_control_visual_profile(
-                    starfox::app::detect_control_visual_profile(
-                        keyboard_control_active ? nullptr : gamepad),
-                    framebuffer, text_renderer, viewport_origin, ppu.cgram);
+                    detected_control_profile,
+                    framebuffer,
+                    text_renderer,
+                    viewport_origin,
+                    ppu.cgram);
             }
             if (controls_screen && viewport_origin > 0) {
                 // The controller screen's backdrop is a BG tile colour rather
@@ -4935,10 +5229,13 @@ int main(int argc, char** argv) {
             presentation_effects.planet = planet_presentation;
             presentation_effects.wipe = game.window_wipe_state();
             presentation_effects.clip_circle = controls_screen;
-            presentation_effects.high_res_control_overlay = controls_screen
-                && starfox::app::detect_control_visual_profile(
-                    keyboard_control_active ? nullptr : gamepad)
-                    == starfox::app::ControlVisualProfile::dualsense;
+            // STARFOX_HD_CONTROL_READY_PASS02
+            presentation_effects.high_res_control_overlay =
+                custom_control_visual_ready
+                && detected_control_profile
+                    == starfox::app::
+                        ControlVisualProfile::
+                            dualsense;
             presentation_effects.circle_left = static_cast<std::int16_t>(
                 24 + viewport_origin);
             presentation_effects.circle_top = 24;
