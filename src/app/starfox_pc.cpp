@@ -1707,7 +1707,7 @@ private:
     SDL_Texture* texture_{};
 
     // STARFOX_MULTI_CONTROL_OVERLAY_TEXTURES
-    std::array<ControlOverlayAsset, 3>
+    std::array<ControlOverlayAsset, 7>
         control_overlay_assets_{{
             {
                 starfox::app::
@@ -1727,6 +1727,14 @@ private:
                         xbox,
                 "xbox_controls_corrected.qoi"
             },
+            {starfox::app::ControlVisualProfile::switch_pro_controller,
+                "switch_pro_controller.qoi"},
+            {starfox::app::ControlVisualProfile::switch_single_joycon,
+                "switch_single_joycon.qoi"},
+            {starfox::app::ControlVisualProfile::switch_dual_joycon,
+                "switch_dual_joycon.qoi"},
+            {starfox::app::ControlVisualProfile::switch_handheld,
+                "switch_handheld.qoi"},
         }};
     std::uint32_t texture_width_{snes_width};
     std::uint32_t texture_height_{snes_height};
@@ -2928,6 +2936,12 @@ int main(int argc, char** argv) {
         bool keyboard_control_active =
             gamepad == nullptr;
 
+#if defined(STARFOX_SWITCH_RUNTIME)
+        // One ControllerSupport prompt per physical disconnect. The latch is
+        // cleared as soon as SDL exposes a connected controller again.
+        bool controller_support_prompted = false;
+#endif
+
         const auto close_gamepads =
             [&] {
 
@@ -3596,6 +3610,33 @@ int main(int argc, char** argv) {
             if (gamepads_dirty) {
 
                 refresh_gamepads();
+
+#if defined(STARFOX_SWITCH_RUNTIME)
+                if (gamepad == nullptr
+                    && !controller_support_prompted
+                    && appletGetOperationMode() != AppletOperationMode_Handheld) {
+                    controller_support_prompted = true;
+
+                    HidLaControllerSupportArg support_arg;
+                    hidLaCreateControllerSupportArg(&support_arg);
+                    support_arg.hdr.player_count_min = 1;
+                    support_arg.hdr.player_count_max = 1;
+                    support_arg.hdr.enable_single_mode = 1;
+                    support_arg.hdr.enable_permit_joy_dual = 1;
+                    support_arg.enable_explain_text = 1;
+                    static_cast<void>(hidLaSetExplainText(
+                        &support_arg, "Conecte um controle", HidNpadIdType_No1));
+                    static_cast<void>(hidLaShowControllerSupport(
+                        nullptr, &support_arg));
+
+                    // ControllerSupport is synchronous. Rebuild immediately
+                    // so the selected layout and input become active together.
+                    refresh_gamepads();
+                }
+                if (gamepad != nullptr) {
+                    controller_support_prompted = false;
+                }
+#endif
 
                 for (std::size_t player = 0;
                      player < secondary_inputs.size();
@@ -4290,33 +4331,27 @@ int main(int argc, char** argv) {
 
             constexpr std::uint32_t
                 required_control_screen_stable_frames =
-                    3U;
+                    15U;
 
             const auto control_screen_ready =
                 controls_screen
                 && !controls_wipe_active
+                // GameFlowState changes while CONT.SCR is still fully black.
+                // Require the cartridge fade to be substantially visible;
+                // this ties the host overlay to actual screen readiness rather
+                // than elapsed host frames alone.
+                && game.map().display_brightness() >= 12U
                 && control_screen_stable_frames
                     >= required_control_screen_stable_frames;
 
-            // For now the custom visual system is intentionally restricted
-            // to the PlayStation controllers currently being implemented.
-            //
-            // Keyboard input remains fully functional, but it does NOT cause
-            // an artwork/profile transition yet. If no supported controller
-            // is active, CONT.SCR keeps its original cartridge artwork.
+            // Keyboard input remains fully functional, but it does not replace
+            // CONT.SCR's original cartridge artwork.
             const auto detected_control_profile =
-                gamepad != nullptr
-
-                ? starfox::app::detect_control_visual_profile(
-                    gamepad)
-
-                : starfox::app::ControlVisualProfile::
-                    keyboard_pc;
+                starfox::app::detect_control_visual_profile(gamepad);
 
             // STARFOX_HIGH_RES_CONTROLLER_PROFILES_PASS05
             const auto high_res_control_visual =
-                gamepad != nullptr
-                && (
+                (
                     detected_control_profile
                         == starfox::app::
                             ControlVisualProfile::
@@ -4331,6 +4366,22 @@ int main(int argc, char** argv) {
                         == starfox::app::
                             ControlVisualProfile::
                                 xbox
+
+                    || detected_control_profile
+                        == starfox::app::ControlVisualProfile::
+                            switch_pro_controller
+
+                    || detected_control_profile
+                        == starfox::app::ControlVisualProfile::
+                            switch_single_joycon
+
+                    || detected_control_profile
+                        == starfox::app::ControlVisualProfile::
+                            switch_dual_joycon
+
+                    || detected_control_profile
+                        == starfox::app::ControlVisualProfile::
+                            switch_handheld
                 );
 
             const auto custom_control_visual_ready =

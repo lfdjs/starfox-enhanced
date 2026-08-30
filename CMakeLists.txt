@@ -198,7 +198,11 @@ if(STARFOX_BUILD_RUNTIME)
     set(starfox_control_hint_assets
         dualsense_controls_white_buttons.qoi
         dualshock4_controls_corrected.qoi
-        xbox_controls_corrected.qoi)
+        xbox_controls_corrected.qoi
+        switch_pro_controller.qoi
+        switch_single_joycon.qoi
+        switch_dual_joycon.qoi
+        switch_handheld.qoi)
     foreach(control_hint_asset IN LISTS starfox_control_hint_assets)
         add_custom_command(TARGET starfox_pc POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory

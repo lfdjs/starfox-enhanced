@@ -20,6 +20,7 @@ enum class ControlVisualProfile : std::uint8_t {
     dualsense,
     xbox,
     switch_pro_controller,
+    switch_single_joycon,
     switch_dual_joycon,
     switch_handheld,
 };
@@ -36,6 +37,7 @@ enum class ControlDeviceKind : std::uint8_t {
     dualshock4,
     dualsense,
     switch_pro_controller,
+    switch_single_joycon,
     switch_dual_joycon,
 };
 
@@ -72,6 +74,7 @@ enum class ControlVisualSprite : std::uint8_t {
     dualshock4,
     dualsense,
     switch_pro_controller,
+    switch_single_joycon,
     switch_dual_joycon,
     switch_handheld,
 };

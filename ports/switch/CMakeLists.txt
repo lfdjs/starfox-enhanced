@@ -74,9 +74,10 @@ file(MAKE_DIRECTORY "${switch_romfs}/control_hints")
 # STARFOX_CONTROL_HINT_ROMFS_PASS05
 set(switch_control_hint_sources)
 foreach(control_hint_asset
-    dualsense_controls_white_buttons.qoi
-    dualshock4_controls_corrected.qoi
-    xbox_controls_corrected.qoi)
+    switch_pro_controller.qoi
+    switch_single_joycon.qoi
+    switch_dual_joycon.qoi
+    switch_handheld.qoi)
 
     list(APPEND switch_control_hint_sources
         "${PROJECT_SOURCE_DIR}/assets/control_hints/${control_hint_asset}")

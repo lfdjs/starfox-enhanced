@@ -25,11 +25,11 @@ constexpr ControlHintBindings keyboard_bindings{
 constexpr ControlHintBindings generic_bindings{
     "STICK/DPAD", "SOUTH FIRE", "EAST BOMB", "WEST BOOST", "NORTH BRAKE", "START", "BACK"};
 constexpr ControlHintBindings xbox_bindings{
-    "LS/DPAD", "A FIRE", "B BOMB", "X BOOST", "Y BRAKE", "MENU", "VIEW"};
+    "LS/DPAD", "X FIRE", "B BOMB", "Y BOOST", "A BRAKE", "MENU PAUSE", "VIEW"};
 constexpr ControlHintBindings playstation_bindings{
-    "MOVE", "X FIRE", "O BOMB", "[] BOOST", "^ BRAKE", "OPTIONS", "SHARE"};
+    "MOVE", "[] FIRE", "O BOMB", "^ BOOST", "X BRAKE", "OPTIONS PAUSE", "SHARE"};
 constexpr ControlHintBindings switch_bindings{
-    "LS/DPAD", "B FIRE", "A BOMB", "Y BOOST", "X BRAKE", "+ START", "- SELECT"};
+    "LS/DPAD", "Y FIRE", "A BOMB", "X BOOST", "B BRAKE", "+ PAUSE", "- VIEW"};
 
 constexpr std::array<ControlHintAnchor, 7> compact_anchors{{
     {ControlHintAction::movement, 0, 58},
@@ -65,6 +65,7 @@ constexpr std::array layouts{
         3, 13, 72, 39, dualsense_anchors},
     make_layout(ControlVisualSprite::xbox),
     make_layout(ControlVisualSprite::switch_pro_controller),
+    make_layout(ControlVisualSprite::switch_single_joycon),
     make_layout(ControlVisualSprite::switch_dual_joycon),
     make_layout(ControlVisualSprite::switch_handheld),
 };
@@ -301,6 +302,9 @@ ControlVisualProfile detect_control_visual_profile(
     const ControlDetectionInput& input) noexcept {
     if (input.platform == ControlPlatform::switch_console) {
         if (input.handheld) return ControlVisualProfile::switch_handheld;
+        if (input.device == ControlDeviceKind::switch_single_joycon) {
+            return ControlVisualProfile::switch_single_joycon;
+        }
         if (input.device == ControlDeviceKind::switch_dual_joycon) {
             return ControlVisualProfile::switch_dual_joycon;
         }
@@ -313,6 +317,8 @@ ControlVisualProfile detect_control_visual_profile(
     case ControlDeviceKind::dualsense: return ControlVisualProfile::dualsense;
     case ControlDeviceKind::switch_pro_controller:
         return ControlVisualProfile::switch_pro_controller;
+    case ControlDeviceKind::switch_single_joycon:
+        return ControlVisualProfile::switch_single_joycon;
     case ControlDeviceKind::switch_dual_joycon:
         return ControlVisualProfile::switch_dual_joycon;
     case ControlDeviceKind::generic_gamepad:
@@ -325,10 +331,14 @@ ControlVisualProfile detect_control_visual_profile(SDL_Gamepad* gamepad) noexcep
     ControlDetectionInput input{ControlPlatform::switch_console,
         ControlDeviceKind::switch_pro_controller, false};
     input.handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
-    if (!input.handheld
-        && (hidGetNpadStyleSet(HidNpadIdType_No1)
-            & HidNpadStyleTag_NpadJoyDual) != 0U) {
-        input.device = ControlDeviceKind::switch_dual_joycon;
+    if (!input.handheld) {
+        const auto style = hidGetNpadStyleSet(HidNpadIdType_No1);
+        if ((style & HidNpadStyleTag_NpadJoyDual) != 0U) {
+            input.device = ControlDeviceKind::switch_dual_joycon;
+        } else if ((style & (HidNpadStyleTag_NpadJoyLeft
+                            | HidNpadStyleTag_NpadJoyRight)) != 0U) {
+            input.device = ControlDeviceKind::switch_single_joycon;
+        }
     }
     return detect_control_visual_profile(input);
 #else
@@ -343,6 +353,9 @@ ControlVisualProfile detect_control_visual_profile(SDL_Gamepad* gamepad) noexcep
     case SDL_GAMEPAD_TYPE_PS5: kind = ControlDeviceKind::dualsense; break;
     case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
         kind = ControlDeviceKind::switch_pro_controller; break;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+        kind = ControlDeviceKind::switch_single_joycon; break;
     case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
         kind = ControlDeviceKind::switch_dual_joycon; break;
     default: break;
@@ -359,6 +372,7 @@ const ControlHintBindings& control_hint_bindings(
     case ControlVisualProfile::dualshock4:
     case ControlVisualProfile::dualsense: return playstation_bindings;
     case ControlVisualProfile::switch_pro_controller:
+    case ControlVisualProfile::switch_single_joycon:
     case ControlVisualProfile::switch_dual_joycon:
     case ControlVisualProfile::switch_handheld: return switch_bindings;
     case ControlVisualProfile::generic_gamepad_pc:
@@ -372,7 +386,7 @@ const ControlHintLayout& control_hint_layout(ControlVisualProfile profile) noexc
 
 std::string_view control_visual_profile_name(ControlVisualProfile profile) noexcept {
     constexpr std::array names{"KEYBOARD", "GAMEPAD", "DUALSHOCK 4", "DUALSENSE",
-        "XBOX", "SWITCH PRO", "DUAL JOY-CON", "HANDHELD"};
+        "XBOX", "SWITCH PRO", "JOY-CON", "DUAL JOY-CON", "HANDHELD"};
     return names[profile_index(profile)];
 }
 
@@ -406,7 +420,11 @@ void draw_control_visual_profile(ControlVisualProfile profile,
     // pass. Keep only the cleaned cartridge panel underneath.
     if (profile == ControlVisualProfile::dualsense
         || profile == ControlVisualProfile::dualshock4
-        || profile == ControlVisualProfile::xbox) {
+        || profile == ControlVisualProfile::xbox
+        || profile == ControlVisualProfile::switch_pro_controller
+        || profile == ControlVisualProfile::switch_single_joycon
+        || profile == ControlVisualProfile::switch_dual_joycon
+        || profile == ControlVisualProfile::switch_handheld) {
 
         return;
     }
