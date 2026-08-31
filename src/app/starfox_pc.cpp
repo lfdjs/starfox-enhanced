@@ -124,6 +124,7 @@ struct PresentationEffects {
     std::optional<
         starfox::app::ControlVisualProfile>
         high_res_control_profile{};
+    std::uint8_t high_res_control_brightness{15U};
 };
 
 struct QoiImage {
@@ -1337,11 +1338,38 @@ public:
             visible_control_profile.reset();
         }
 
+        if (visible_control_profile) {
+            // Inspect the final post-palette, post-fade pixels that SDL will
+            // actually display. Indexed CONT.SCR data can already exist while
+            // its current palette still resolves to black, which previously
+            // allowed the external controller to flash one frame too early.
+            const auto origin_x = framebuffer.width() > snes_width
+                ? (framebuffer.width() - snes_width) / 2U : 0U;
+            std::uint32_t visible_native_pixels{};
+            for (std::uint32_t y = 0U; y < snes_height; ++y) {
+                for (std::uint32_t x = 0U; x < snes_width; ++x) {
+                    const auto pixel = (static_cast<std::size_t>(y)
+                        * framebuffer.width() + origin_x + x) * 4U;
+                    if (rgba_[pixel] != 0U
+                        || rgba_[pixel + 1U] != 0U
+                        || rgba_[pixel + 2U] != 0U) {
+                        ++visible_native_pixels;
+                    }
+                }
+            }
+            constexpr auto minimum_visible_native_pixels =
+                snes_width * snes_height / 3U;
+            if (visible_native_pixels < minimum_visible_native_pixels) {
+                visible_control_profile.reset();
+            }
+        }
+
         present_rgba_pixels(
             framebuffer.width(),
             framebuffer.height(),
             rgba_,
-            visible_control_profile);
+            visible_control_profile,
+            effects.high_res_control_brightness);
     }
 
     void present_rgba(std::uint32_t width, std::uint32_t height,
@@ -1355,7 +1383,8 @@ public:
             width,
             height,
             rgba_,
-            std::nullopt);
+            std::nullopt,
+            15U);
     }
 
     [[nodiscard]] std::span<const std::uint8_t> rgba() const noexcept {
@@ -1572,7 +1601,8 @@ private:
         std::span<const std::uint8_t> rgba,
         std::optional<
             starfox::app::ControlVisualProfile>
-            high_res_control_profile) {
+            high_res_control_profile,
+        std::uint8_t high_res_control_brightness) {
         if (!SDL_UpdateTexture(texture_, nullptr, rgba.data(),
                 static_cast<int>(width * 4U))) {
             throw std::runtime_error{std::string{"SDL_UpdateTexture: "} + SDL_GetError()};
@@ -1587,6 +1617,11 @@ private:
                     *high_res_control_profile);
 
             if (overlay != nullptr) {
+
+                static_cast<void>(SDL_SetTextureAlphaModFloat(
+                    overlay->texture,
+                    static_cast<float>(std::min<std::uint8_t>(
+                        high_res_control_brightness, 15U)) / 15.0F));
 
                 // STARFOX_MULTI_CONTROL_OVERLAY_RENDER
                 //
@@ -3221,12 +3256,7 @@ int main(int argc, char** argv) {
         bool suppress_fullscreen_start{};
         double last_phase_fraction{};
 
-        // STARFOX_CONTROL_SCREEN_STABLE_COUNTER
-        //
-        // GameFlowState switches to CONT.SCR before every visual transition
-        // affecting that screen has necessarily completed. Delay only the
-        // host replacement artwork, never cartridge logic.
-        std::uint32_t control_screen_stable_frames{};
+        bool control_screen_observed_black{};
 
         // Open and synchronize the native window before the cartridge flow
         // begins. This leaves a stable one-and-a-half-second black preroll instead of
@@ -4315,34 +4345,21 @@ int main(int argc, char** argv) {
             const auto controls_wipe_active =
                 game.window_wipe_state().active;
 
-            if (controls_screen
-                && !controls_wipe_active) {
+            const auto control_screen_brightness =
+                game.map().display_brightness();
 
-                control_screen_stable_frames =
-                    std::min<std::uint32_t>(
-                        control_screen_stable_frames + 1U,
-                        255U);
+            if (!controls_screen) {
 
-            } else {
+                control_screen_observed_black = false;
 
-                control_screen_stable_frames =
-                    0U;
+            } else if (control_screen_brightness == 0U) {
+
+                // The flow state can change before the last title raster has
+                // left the presentation queue. Do not accept a bright frame
+                // until this particular controls-screen entry has actually
+                // passed through its forced-black setup interval.
+                control_screen_observed_black = true;
             }
-
-            constexpr std::uint32_t
-                required_control_screen_stable_frames =
-                    15U;
-
-            const auto control_screen_ready =
-                controls_screen
-                && !controls_wipe_active
-                // GameFlowState changes while CONT.SCR is still fully black.
-                // Require the cartridge fade to be substantially visible;
-                // this ties the host overlay to actual screen readiness rather
-                // than elapsed host frames alone.
-                && game.map().display_brightness() >= 12U
-                && control_screen_stable_frames
-                    >= required_control_screen_stable_frames;
 
             // Keyboard input remains fully functional, but it does not replace
             // CONT.SCR's original cartridge artwork.
@@ -4384,8 +4401,11 @@ int main(int argc, char** argv) {
                             switch_handheld
                 );
 
-            const auto custom_control_visual_ready =
-                control_screen_ready
+            auto custom_control_visual_ready =
+                controls_screen
+                && !controls_wipe_active
+                && control_screen_observed_black
+                && ppu.background_mode == 1U
                 && high_res_control_visual;
             if (!planet_screen && game.map().dots_mode() < 0) {
                 dust_renderer.draw(game.dust(), game.dust_point_count(),
@@ -5228,9 +5248,13 @@ int main(int argc, char** argv) {
             }
             // STARFOX_PLAYSTATION_VISUAL_ONLY_PASS02
             //
-            // Draw only after CONT.SCR is genuinely visible. Keyboard input
-            // does not participate in visual-profile switching yet.
-            if (custom_control_visual_ready) {
+            // Clean CONT.SCR's original SNES controller as soon as this flow
+            // owns the framebuffer, independently of when the external PNG
+            // becomes safe to present. High-resolution profiles return from
+            // draw_control_visual_profile immediately after clearing their
+            // panel, so the transition can reveal only the backdrop instead
+            // of briefly exposing the cartridge controller underneath.
+            if (controls_screen && high_res_control_visual) {
 
                 starfox::app::draw_control_visual_profile(
                     detected_control_profile,
@@ -5238,6 +5262,72 @@ int main(int argc, char** argv) {
                     text_renderer,
                     viewport_origin,
                     ppu.cgram);
+
+                std::string_view select_button{"SELECT"};
+                std::string_view start_button{"START"};
+                switch (detected_control_profile) {
+                case starfox::app::ControlVisualProfile::dualshock4:
+                case starfox::app::ControlVisualProfile::dualsense:
+                    select_button = "SHARE";
+                    start_button = "OPTIONS";
+                    break;
+                case starfox::app::ControlVisualProfile::xbox:
+                    select_button = "VIEW";
+                    start_button = "MENU";
+                    break;
+                case starfox::app::ControlVisualProfile::switch_single_joycon:
+                    select_button = "STICK";
+                    start_button = "+/-";
+                    break;
+                case starfox::app::ControlVisualProfile::switch_pro_controller:
+                case starfox::app::ControlVisualProfile::switch_dual_joycon:
+                case starfox::app::ControlVisualProfile::switch_handheld:
+                    select_button = "-";
+                    start_button = "+";
+                    break;
+                default: break;
+                }
+
+                const auto backdrop = framebuffer.get(
+                    static_cast<std::uint32_t>(5 + viewport_origin), 210U);
+                const auto prompt_palette =
+                    starfox::render::decode_bgr555_palette(ppu.cgram);
+                const auto prompt_colour = nearest_palette_index(
+                    prompt_palette, {120U, 248U, 240U, 255U});
+                const auto clear_prompt = [&](std::int32_t left,
+                                              std::int32_t top,
+                                              std::int32_t width,
+                                              std::int32_t height) {
+                    for (auto y = top; y < top + height; ++y) {
+                        for (auto x = left; x < left + width; ++x) {
+                            framebuffer.set(x + viewport_origin, y, backdrop);
+                        }
+                    }
+                };
+                const auto draw_prompt = [&](std::string_view text,
+                                             std::int32_t y) {
+                    constexpr std::int32_t left = 132;
+                    constexpr std::int32_t right = 256;
+                    const auto x = left + (right - left
+                        - starfox::app::measure_control_mini_text(text)) / 2;
+                    starfox::app::draw_control_mini_text(framebuffer, text,
+                        x + viewport_origin, y, prompt_colour);
+                };
+
+                clear_prompt(132, 26, 124, 22);
+                const auto select_prompt = std::string{"PUSH "}
+                    + std::string{select_button};
+                draw_prompt(select_prompt, 34);
+
+                if (game.flow_state()
+                    == starfox::simulation::GameFlowState::controls_type) {
+                    clear_prompt(132, 145, 124, 79);
+                    const auto start_prompt = std::string{"PUSH "}
+                        + std::string{start_button};
+                    draw_prompt(start_prompt, 154);
+                    draw_prompt("TO", 180);
+                    draw_prompt("EXIT", 206);
+                }
             }
             if (controls_screen && viewport_origin > 0) {
                 // The controller screen's backdrop is a BG tile colour rather
@@ -5688,6 +5778,8 @@ int main(int argc, char** argv) {
                             detected_control_profile}
 
                 : std::nullopt;
+            presentation_effects.high_res_control_brightness =
+                control_screen_brightness;
             presentation_effects.circle_left = static_cast<std::int16_t>(
                 24 + viewport_origin);
             presentation_effects.circle_top = 24;

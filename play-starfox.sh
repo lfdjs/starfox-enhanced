@@ -66,11 +66,16 @@ if [[ ! -x "$EXECUTABLE_PATH" ]]; then
         -DSTARFOX_BUILD_TESTS=ON \
         -DSTARFOX_EMBED_RUNTIME_ASSETS=OFF
 
-    cmake \
-        --build "$BUILD_PATH" \
-        --target starfox_pc \
-        -j"$(nproc)"
 fi
+
+# Always perform the incremental build. CMake/Ninja returns immediately when
+# everything is current, and recompiles only changed sources otherwise. This
+# prevents the launcher from silently running a stale executable merely
+# because one already exists in build/linux-release.
+cmake \
+    --build "$BUILD_PATH" \
+    --target starfox_pc \
+    -j"$(nproc)"
 
 echo
 echo "============================================================"
@@ -85,4 +90,3 @@ exec \
     "$ROM_PATH" \
     "$SYMBOLS_PATH" \
     "$MAP"
-

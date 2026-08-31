@@ -111,9 +111,11 @@ std::array<std::uint8_t, 5> mini_glyph(char value) noexcept {
     switch (value) {
     case 'A': return {2, 5, 7, 5, 5};
     case 'B': return {6, 5, 6, 5, 6};
+    case 'C': return {3, 4, 4, 4, 3};
     case 'D': return {6, 5, 5, 5, 6};
     case 'E': return {7, 4, 6, 4, 7};
     case 'F': return {7, 4, 6, 4, 4};
+    case 'H': return {5, 5, 7, 5, 5};
     case 'I': return {7, 2, 2, 2, 7};
     case 'K': return {5, 5, 6, 5, 5};
     case 'L': return {4, 4, 4, 4, 7};
@@ -126,7 +128,10 @@ std::array<std::uint8_t, 5> mini_glyph(char value) noexcept {
     case 'T': return {7, 2, 2, 2, 2};
     case 'U': return {5, 5, 5, 5, 7};
     case 'V': return {5, 5, 5, 5, 2};
+    case 'W': return {5, 5, 7, 7, 5};
     case 'X': return {5, 5, 2, 5, 5};
+    case '+': return {0, 2, 7, 2, 0};
+    case '-': return {0, 0, 7, 0, 0};
     case '/': return {1, 1, 2, 4, 4};
     case '[': return {6, 4, 4, 4, 6};
     case ']': return {3, 1, 1, 1, 3};
@@ -300,6 +305,16 @@ std::string_view label_for(const ControlHintBindings& labels,
 }
 
 } // namespace
+
+std::int32_t measure_control_mini_text(std::string_view text) noexcept {
+    return measure_mini_text(text);
+}
+
+void draw_control_mini_text(render::Framebuffer& framebuffer,
+    std::string_view text, std::int32_t x, std::int32_t y,
+    std::uint8_t colour) noexcept {
+    draw_mini_text(framebuffer, text, x, y, colour);
+}
 
 ControlVisualProfile detect_control_visual_profile(
     const ControlDetectionInput& input) noexcept {

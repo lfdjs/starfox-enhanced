@@ -104,6 +104,14 @@ struct ControlHintLayout {
     ControlVisualProfile profile) noexcept;
 [[nodiscard]] std::string_view control_visual_profile_name(
     ControlVisualProfile profile) noexcept;
+[[nodiscard]] std::int32_t measure_control_mini_text(
+    std::string_view text) noexcept;
+void draw_control_mini_text(
+    render::Framebuffer& framebuffer,
+    std::string_view text,
+    std::int32_t x,
+    std::int32_t y,
+    std::uint8_t colour) noexcept;
 
 void draw_control_visual_profile(
     ControlVisualProfile profile,
