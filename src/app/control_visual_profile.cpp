@@ -30,6 +30,9 @@ constexpr ControlHintBindings playstation_bindings{
     "MOVE", "[] FIRE", "O BOMB", "^ BOOST", "X BRAKE", "OPTIONS PAUSE", "SHARE"};
 constexpr ControlHintBindings switch_bindings{
     "LS/DPAD", "Y FIRE", "A BOMB", "X BOOST", "B BRAKE", "+ PAUSE", "- VIEW"};
+constexpr ControlHintBindings switch_single_joycon_bindings{
+    "STICK", "LEFT FIRE", "RIGHT BOMB", "TOP BOOST", "BOTTOM BRAKE",
+    "+/- PAUSE", "STICK PRESS VIEW"};
 
 constexpr std::array<ControlHintAnchor, 7> compact_anchors{{
     {ControlHintAction::movement, 0, 58},
@@ -371,8 +374,9 @@ const ControlHintBindings& control_hint_bindings(
     case ControlVisualProfile::xbox: return xbox_bindings;
     case ControlVisualProfile::dualshock4:
     case ControlVisualProfile::dualsense: return playstation_bindings;
-    case ControlVisualProfile::switch_pro_controller:
     case ControlVisualProfile::switch_single_joycon:
+        return switch_single_joycon_bindings;
+    case ControlVisualProfile::switch_pro_controller:
     case ControlVisualProfile::switch_dual_joycon:
     case ControlVisualProfile::switch_handheld: return switch_bindings;
     case ControlVisualProfile::generic_gamepad_pc:

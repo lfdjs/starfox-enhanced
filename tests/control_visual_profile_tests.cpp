@@ -44,7 +44,10 @@ int main() {
     assert(control_hint_bindings(
         ControlVisualProfile::switch_pro_controller).start == "+ PAUSE");
     assert(control_hint_bindings(
-        ControlVisualProfile::switch_single_joycon).fire == "Y FIRE");
+        ControlVisualProfile::switch_single_joycon).start == "+/- PAUSE");
+    assert(control_hint_bindings(
+        ControlVisualProfile::switch_single_joycon).select
+        == "STICK PRESS VIEW");
     assert(control_hint_bindings(
         ControlVisualProfile::switch_handheld).brake == "B BRAKE");
     assert(control_hint_bindings(
