@@ -180,6 +180,8 @@ add_executable(starfox_planet_probe src/app/planet_probe.cpp)
 target_link_libraries(starfox_planet_probe PRIVATE starfox_core)
 
 if(STARFOX_BUILD_RUNTIME)
+    # STARFOX_NATIVE_UI_FREETYPE_FIND_PASS05
+    find_package(Freetype REQUIRED)
     set(SDL_SHARED OFF CACHE BOOL "Avoid a runtime SDL DLL" FORCE)
     set(SDL_STATIC ON CACHE BOOL "Link SDL into the native executable" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "Do not build the SDL test library" FORCE)
@@ -193,8 +195,28 @@ if(STARFOX_BUILD_RUNTIME)
 
     add_executable(starfox_pc
         src/app/control_visual_profile.cpp
+        src/app/native_ui.cpp
+        src/app/native_font.cpp
         src/app/starfox_pc.cpp
         src/app/runtime_input.cpp)
+    # STARFOX_NATIVE_UI_FONT_COPY_PASS05
+    add_custom_command(
+        TARGET starfox_pc
+        POST_BUILD
+
+        COMMAND
+            ${CMAKE_COMMAND}
+            -E make_directory
+            "$<TARGET_FILE_DIR:starfox_pc>/assets/ui"
+
+        COMMAND
+            ${CMAKE_COMMAND}
+            -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/DejaVuSans.ttf"
+            "$<TARGET_FILE_DIR:starfox_pc>/assets/ui/DejaVuSans.ttf"
+
+        VERBATIM)
+
     set(starfox_control_hint_assets
         dualsense_controls_white_buttons.qoi
         dualshock4_controls_corrected.qoi
@@ -218,6 +240,12 @@ if(STARFOX_BUILD_RUNTIME)
         set_target_properties(starfox_pc PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()
     target_link_libraries(starfox_pc PRIVATE starfox_core SDL3::SDL3)
+
+    # STARFOX_NATIVE_UI_FREETYPE_LINK_PASS05
+    target_link_libraries(
+        starfox_pc
+        PRIVATE
+            Freetype::Freetype)
     if(WIN32 AND STARFOX_EMBED_RUNTIME_ASSETS)
         if(EXISTS "${STARFOX_ORIGINAL_PATCH_FILE}"
            AND EXISTS "${STARFOX_SYMBOLS_FILE}"

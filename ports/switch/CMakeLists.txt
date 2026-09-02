@@ -8,14 +8,28 @@ if(NOT TARGET SDL3::SDL3)
     find_package(SDL3 CONFIG REQUIRED)
 endif()
 
+
+# STARFOX_SWITCH_FREETYPE_FIND_PASS05
+if(NOT TARGET Freetype::Freetype)
+    find_package(Freetype REQUIRED)
+endif()
+
 add_executable(starfox_switch
     ${PROJECT_SOURCE_DIR}/src/app/control_visual_profile.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/native_ui.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/native_font.cpp
     ${PROJECT_SOURCE_DIR}/src/app/starfox_pc.cpp
     ${PROJECT_SOURCE_DIR}/src/app/runtime_input.cpp)
 target_compile_definitions(starfox_switch PRIVATE
     STARFOX_SWITCH_RUNTIME=1
     __SWITCH__=1)
 target_link_libraries(starfox_switch PRIVATE starfox_core SDL3::SDL3)
+
+# STARFOX_SWITCH_FREETYPE_LINK_PASS05
+target_link_libraries(
+    starfox_switch
+    PRIVATE
+        Freetype::Freetype)
 
 # Temporary Switch performance profiler. Keep the same profiler
 # configuration in the core and application translation units so
@@ -71,6 +85,19 @@ set(switch_nro "${CMAKE_CURRENT_BINARY_DIR}/starfox_switch.nro")
 set(switch_romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 file(REMOVE_RECURSE "${switch_romfs}")
 file(MAKE_DIRECTORY "${switch_romfs}/control_hints")
+
+
+# STARFOX_NATIVE_UI_FONT_ROMFS_PASS05
+file(MAKE_DIRECTORY "${switch_romfs}/ui")
+
+set(
+    switch_native_ui_font
+    "${PROJECT_SOURCE_DIR}/assets/ui/DejaVuSans.ttf")
+
+configure_file(
+    "${switch_native_ui_font}"
+    "${switch_romfs}/ui/DejaVuSans.ttf"
+    COPYONLY)
 # STARFOX_CONTROL_HINT_ROMFS_PASS05
 set(switch_control_hint_sources)
 foreach(control_hint_asset
@@ -97,7 +124,11 @@ add_custom_command(OUTPUT "${switch_nro}"
     COMMAND "${STARFOX_ELF2NRO}" "$<TARGET_FILE:starfox_switch>"
         "${switch_nro}" "--nacp=${switch_nacp}"
         "--romfsdir=${switch_romfs}"
-    DEPENDS starfox_switch "${switch_nacp}" ${switch_control_hint_sources}
+    DEPENDS
+        starfox_switch
+        "${switch_nacp}"
+        ${switch_control_hint_sources}
+        "${switch_native_ui_font}"
     VERBATIM)
 add_custom_target(starfox_switch_nro ALL DEPENDS "${switch_nro}")
 

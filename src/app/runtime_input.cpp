@@ -76,91 +76,472 @@ constexpr std::int16_t kAxisThreshold = 16'000;
 #if defined(STARFOX_SWITCH_RUNTIME)
 
 input::ButtonMask sample_switch_native_buttons() noexcept {
+
+    // STARFOX_SWITCH_NATIVE_INPUT_PASS02
+    //
+    // Pro Controller, paired Joy-Cons and handheld mode expose a
+    // complete Nintendo diamond and therefore keep the normal SNES
+    // physical-position mapping.
+    //
+    // A single Joy-Con is a different device layout: it is held
+    // horizontally, uses SL/SR as shoulders and the stick click as
+    // SNES Select / Star Fox Change View.
+
     static PadState pad{};
     static bool initialized{};
+    static bool previous_single_joycon{};
+
 
     if (!initialized) {
+
         padConfigureInput(
             1,
             HidNpadStyleSet_NpadStandard);
 
+
+        // This affects Joy-Cons assigned in single mode only.
+        // Full-size controllers and JoyDual remain normal.
+        static_cast<void>(
+            hidSetNpadJoyHoldType(
+                HidNpadJoyHoldType_Horizontal));
+
+
         padInitializeDefault(
             &pad);
 
-        initialized = true;
+
+        initialized =
+            true;
     }
+
 
     padUpdate(
         &pad);
+
+
+    const auto style =
+        padGetStyleSet(
+            &pad);
+
+
+    const auto handheld =
+        padIsHandheld(
+            &pad);
+
+
+    const auto single_left =
+        !handheld
+        && (
+            style
+            & HidNpadStyleTag_NpadJoyLeft
+        ) != 0U;
+
+
+    const auto single_right =
+        !handheld
+        && (
+            style
+            & HidNpadStyleTag_NpadJoyRight
+        ) != 0U;
+
+
+    const auto single_joycon =
+        single_left
+        || single_right;
+
+
+    // ControllerSupport can change the assignment while the program
+    // is alive. Reassert horizontal hold when entering single mode.
+    if (single_joycon
+        && !previous_single_joycon) {
+
+        static_cast<void>(
+            hidSetNpadJoyHoldType(
+                HidNpadJoyHoldType_Horizontal));
+    }
+
+
+    previous_single_joycon =
+        single_joycon;
+
 
     const auto held =
         padGetButtons(
             &pad);
 
+
     input::ButtonMask result{};
+
 
     const auto add =
         [&result, held](
             u64 physical,
             input::ButtonMask logical) {
 
-            if ((held & physical) != 0U) {
-                result =
-                    static_cast<input::ButtonMask>(
-                        result | logical);
+            if ((held & physical) == 0U) {
+                return;
             }
+
+
+            result =
+                static_cast<input::ButtonMask>(
+                    result
+                    | logical);
         };
 
-    // Preserve the physical SNES-style diamond layout.
-    add(HidNpadButton_B, input::b);
-    add(HidNpadButton_Y, input::y);
 
-    add(HidNpadButton_Minus, input::select);
-    add(HidNpadButton_Plus, input::start);
+    constexpr int threshold =
+        16'000;
 
-    add(HidNpadButton_Up, input::up);
-    add(HidNpadButton_Down, input::down);
-    add(HidNpadButton_Left, input::left);
-    add(HidNpadButton_Right, input::right);
 
-    add(HidNpadButton_A, input::a);
-    add(HidNpadButton_X, input::x);
+    // ========================================================
+    // SINGLE JOY-CON
+    // ========================================================
 
-    add(HidNpadButton_L, input::left_shoulder);
-    add(HidNpadButton_R, input::right_shoulder);
+    if (single_joycon) {
 
-    // Star Fox also accepts the left analogue stick as D-pad input.
+        // ----------------------------------------------------
+        // START
+        // ----------------------------------------------------
+        //
+        // Left Joy-Con has Minus.
+        // Right Joy-Con has Plus.
+        //
+        // Either one therefore represents SNES Start in
+        // single-controller mode.
+
+        add(
+            HidNpadButton_Plus
+                | HidNpadButton_Minus,
+            input::start);
+
+
+        // ----------------------------------------------------
+        // CHANGE VIEW
+        // ----------------------------------------------------
+        //
+        // Explicit user-requested mapping:
+        //
+        // ANALOGUE STICK CLICK
+        //        ->
+        // SNES SELECT
+        //        ->
+        // STAR FOX CHANGE VIEW
+        //
+        // Single Joy-Con R may expose its original right-stick
+        // click or the normalized left-stick click depending on
+        // assignment/backend, so accept both.
+
+        add(
+            HidNpadButton_StickL
+                | HidNpadButton_StickR,
+            input::select);
+
+
+        // ----------------------------------------------------
+        // ROLL
+        // ----------------------------------------------------
+
+        add(
+            HidNpadButton_AnySL,
+            input::left_shoulder);
+
+
+        add(
+            HidNpadButton_AnySR,
+            input::right_shoulder);
+
+
+        // ----------------------------------------------------
+        // FOUR ACTION POSITIONS
+        // ----------------------------------------------------
+        //
+        // Player-facing horizontal positions:
+        //
+        // LEFT   -> FIRE      -> SNES Y
+        // RIGHT  -> NOVA BOMB -> SNES A
+        // TOP    -> BOOST     -> SNES X
+        // BOTTOM -> BRAKE     -> SNES B
+
+        if (single_left) {
+
+            // Joy-Con L is rotated counter-clockwise.
+            //
+            // In single assignment Horizon can expose its
+            // physical directional buttons through the XYAB
+            // aliases. Accept both forms so this works on
+            // hardware and emulator SDL/HID paths.
+
+            add(
+                HidNpadButton_X
+                    | HidNpadButton_Up,
+                input::y);          // LEFT -> FIRE
+
+
+            add(
+                HidNpadButton_B
+                    | HidNpadButton_Down,
+                input::a);          // RIGHT -> BOMB
+
+
+            add(
+                HidNpadButton_A
+                    | HidNpadButton_Right,
+                input::x);          // TOP -> BOOST
+
+
+            add(
+                HidNpadButton_Y
+                    | HidNpadButton_Left,
+                input::b);          // BOTTOM -> BRAKE
+
+        } else {
+
+            // Joy-Con R is rotated clockwise.
+
+            add(
+                HidNpadButton_B,
+                input::y);          // LEFT -> FIRE
+
+
+            add(
+                HidNpadButton_X,
+                input::a);          // RIGHT -> BOMB
+
+
+            add(
+                HidNpadButton_Y,
+                input::x);          // TOP -> BOOST
+
+
+            add(
+                HidNpadButton_A,
+                input::b);          // BOTTOM -> BRAKE
+        }
+
+
+        // ----------------------------------------------------
+        // ANALOGUE MOVEMENT
+        // ----------------------------------------------------
+
+        const auto stick =
+            padGetStickPos(
+                &pad,
+                0);
+
+
+        if (single_left) {
+
+            // Physical Joy-Con L rotated counter-clockwise:
+            //
+            // +Y -> LEFT
+            // -Y -> RIGHT
+            // +X -> UP
+            // -X -> DOWN
+
+            if (stick.y >= threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::left);
+            }
+
+
+            if (stick.y <= -threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::right);
+            }
+
+
+            if (stick.x >= threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::up);
+            }
+
+
+            if (stick.x <= -threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::down);
+            }
+
+        } else {
+
+            // Physical Joy-Con R rotated clockwise:
+            //
+            // +Y -> RIGHT
+            // -Y -> LEFT
+            // -X -> UP
+            // +X -> DOWN
+
+            if (stick.y >= threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::right);
+            }
+
+
+            if (stick.y <= -threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::left);
+            }
+
+
+            if (stick.x <= -threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::up);
+            }
+
+
+            if (stick.x >= threshold) {
+
+                result =
+                    static_cast<input::ButtonMask>(
+                        result
+                        | input::down);
+            }
+        }
+
+
+        return result;
+    }
+
+
+    // ========================================================
+    // PRO CONTROLLER
+    // DUAL JOY-CON
+    // HANDHELD
+    // ========================================================
+    //
+    // Preserve the SNES diamond by physical position:
+    //
+    // Switch Y -> SNES Y -> FIRE
+    // Switch A -> SNES A -> NOVA BOMB
+    // Switch X -> SNES X -> BOOST
+    // Switch B -> SNES B -> BRAKE
+
+    add(
+        HidNpadButton_B,
+        input::b);
+
+
+    add(
+        HidNpadButton_Y,
+        input::y);
+
+
+    add(
+        HidNpadButton_A,
+        input::a);
+
+
+    add(
+        HidNpadButton_X,
+        input::x);
+
+
+    // Full-size Select / Start equivalents.
+    add(
+        HidNpadButton_Minus,
+        input::select);
+
+
+    add(
+        HidNpadButton_Plus,
+        input::start);
+
+
+    // Digital movement.
+    add(
+        HidNpadButton_Up,
+        input::up);
+
+
+    add(
+        HidNpadButton_Down,
+        input::down);
+
+
+    add(
+        HidNpadButton_Left,
+        input::left);
+
+
+    add(
+        HidNpadButton_Right,
+        input::right);
+
+
+    // Roll.
+    add(
+        HidNpadButton_L,
+        input::left_shoulder);
+
+
+    add(
+        HidNpadButton_R,
+        input::right_shoulder);
+
+
+    // Analogue movement.
     const auto stick =
         padGetStickPos(
             &pad,
             0);
 
-    constexpr int threshold =
-        16'000;
 
     if (stick.y >= threshold) {
+
         result =
             static_cast<input::ButtonMask>(
-                result | input::up);
+                result
+                | input::up);
     }
+
 
     if (stick.y <= -threshold) {
+
         result =
             static_cast<input::ButtonMask>(
-                result | input::down);
+                result
+                | input::down);
     }
+
 
     if (stick.x <= -threshold) {
+
         result =
             static_cast<input::ButtonMask>(
-                result | input::left);
+                result
+                | input::left);
     }
 
+
     if (stick.x >= threshold) {
+
         result =
             static_cast<input::ButtonMask>(
-                result | input::right);
+                result
+                | input::right);
     }
+
 
     return result;
 }

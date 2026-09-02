@@ -1,5 +1,7 @@
 #include "starfox/app/perf_profiler.hpp"
 #include "starfox/app/control_visual_profile.hpp"
+#include "starfox/app/native_ui.hpp"
+#include "starfox/app/native_font.hpp"
 #include "starfox/audio/spc700_audio.hpp"
 #include "starfox/app/runtime_input.hpp"
 #include "starfox/app/platform_profile.hpp"
@@ -125,6 +127,15 @@ struct PresentationEffects {
         starfox::app::ControlVisualProfile>
         high_res_control_profile{};
     std::uint8_t high_res_control_brightness{15U};
+
+    // STARFOX_NATIVE_CONTROLS_UI_EFFECT
+    bool native_controls_ui{};
+    std::uint8_t native_control_type{};
+
+
+    // STARFOX_NATIVE_TITLE_EFFECT_PASS07
+    bool native_title_ui{};
+    std::uint8_t native_title_brightness{15U};
 };
 
 struct QoiImage {
@@ -1104,6 +1115,10 @@ public:
         }
 
         SDL_DestroyTexture(texture_);
+        starfox::app::
+            shutdown_native_ui_font(
+                renderer_);
+
         SDL_DestroyRenderer(renderer_);
         SDL_DestroyWindow(window_);
     }
@@ -1369,7 +1384,11 @@ public:
             framebuffer.height(),
             rgba_,
             visible_control_profile,
-            effects.high_res_control_brightness);
+            effects.high_res_control_brightness,
+            effects.native_controls_ui,
+            effects.native_control_type,
+            effects.native_title_ui,
+            effects.native_title_brightness);
     }
 
     void present_rgba(std::uint32_t width, std::uint32_t height,
@@ -1384,6 +1403,10 @@ public:
             height,
             rgba_,
             std::nullopt,
+            15U,
+            false,
+            0U,
+            false,
             15U);
     }
 
@@ -1602,11 +1625,105 @@ private:
         std::optional<
             starfox::app::ControlVisualProfile>
             high_res_control_profile,
-        std::uint8_t high_res_control_brightness) {
+        std::uint8_t high_res_control_brightness,
+        bool native_controls_ui,
+        std::uint8_t native_control_type,
+        bool native_title_ui,
+        std::uint8_t native_title_brightness) {
         if (!SDL_UpdateTexture(texture_, nullptr, rgba.data(),
                 static_cast<int>(width * 4U))) {
             throw std::runtime_error{std::string{"SDL_UpdateTexture: "} + SDL_GetError()};
         }
+        // STARFOX_NATIVE_TITLE_RENDER_PASS07
+        //
+        // Title is independent from gamepad overlay availability.
+
+        if (native_title_ui) {
+
+            if (starfox::app::
+                    render_native_title_ui(
+                        renderer_,
+                        texture_,
+                        width,
+                        height,
+                        rgba,
+                        native_title_brightness)) {
+
+                SDL_RenderPresent(
+                    renderer_);
+
+
+                static_cast<void>(
+                    SDL_SetRenderLogicalPresentation(
+                        renderer_,
+                        static_cast<int>(
+                            width),
+                        static_cast<int>(
+                            height),
+                        SDL_LOGICAL_PRESENTATION_LETTERBOX));
+
+
+                return;
+            }
+        }
+
+
+        // STARFOX_NATIVE_CONTROLS_UI_RENDER
+        //
+        // CONT.SCR is the first fully remastered front-end screen.
+        // Gameplay and all game state remain cartridge-driven.
+
+        if (native_controls_ui
+            && high_res_control_profile) {
+
+            const auto* overlay =
+                control_overlay_for(
+                    *high_res_control_profile);
+
+
+            if (overlay != nullptr) {
+
+                const starfox::app::
+                    NativeControlsUiModel
+                    native_model{
+                        *high_res_control_profile,
+                        native_control_type,
+                        high_res_control_brightness
+                    };
+
+
+                if (starfox::app::
+                        render_native_controls_ui(
+                            renderer_,
+                            texture_,
+                            width,
+                            height,
+                            overlay->texture,
+                            overlay->source,
+                            native_model)) {
+
+                    SDL_RenderPresent(
+                        renderer_);
+
+
+                    // Restore the game's logical presentation for all
+                    // subsequent gameplay/non-remastered frames.
+                    static_cast<void>(
+                        SDL_SetRenderLogicalPresentation(
+                            renderer_,
+                            static_cast<int>(
+                                width),
+                            static_cast<int>(
+                                height),
+                            SDL_LOGICAL_PRESENTATION_LETTERBOX));
+
+
+                    return;
+                }
+            }
+        }
+
+
         SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, texture_, nullptr, nullptr);
@@ -5304,29 +5421,75 @@ int main(int argc, char** argv) {
                         }
                     }
                 };
-                const auto draw_prompt = [&](std::string_view text,
-                                             std::int32_t y) {
-                    constexpr std::int32_t left = 132;
-                    constexpr std::int32_t right = 256;
-                    const auto x = left + (right - left
-                        - starfox::app::measure_control_mini_text(text)) / 2;
-                    starfox::app::draw_control_mini_text(framebuffer, text,
-                        x + viewport_origin, y, prompt_colour);
+                // STARFOX_CONTROL_PROMPT_FONT_PASS02
+                //
+                // Keep dynamic controller names, but render them using
+                // Star Fox's original 12-pixel ROM font instead of the
+                // temporary 3x5 diagnostic font.
+                //
+                // x=140 deliberately begins after CONT.SCR's flight
+                // window/frame, avoiding the black stripe seen at its
+                // upper-right corner.
+
+                const auto draw_prompt =
+                    [&](std::string_view text,
+                        std::int32_t y) {
+
+                    constexpr std::int32_t left =
+                        140;
+
+                    constexpr std::int32_t right =
+                        256;
+
+
+                    const auto width =
+                        text_renderer.measure_ascii(
+                            text);
+
+
+                    const auto x =
+                        left
+                        + (
+                            right
+                            - left
+                            - width
+                          ) / 2;
+
+
+                    const auto colour_bank =
+                        static_cast<std::uint8_t>(
+                            prompt_colour
+                            & 0xf0U);
+
+
+                    const auto colour_ink =
+                        static_cast<std::uint8_t>(
+                            prompt_colour
+                            & 0x0fU);
+
+
+                    text_renderer.draw_ascii(
+                        text,
+                        x + viewport_origin,
+                        y,
+                        framebuffer,
+                        colour_ink,
+                        colour_bank);
                 };
 
-                clear_prompt(132, 26, 124, 22);
+                clear_prompt(140, 26, 116, 20);
                 const auto select_prompt = std::string{"PUSH "}
                     + std::string{select_button};
-                draw_prompt(select_prompt, 34);
+                draw_prompt(select_prompt, 30);
 
                 if (game.flow_state()
                     == starfox::simulation::GameFlowState::controls_type) {
-                    clear_prompt(132, 145, 124, 79);
+                    clear_prompt(140, 145, 116, 79);
                     const auto start_prompt = std::string{"PUSH "}
                         + std::string{start_button};
-                    draw_prompt(start_prompt, 154);
-                    draw_prompt("TO", 180);
-                    draw_prompt("EXIT", 206);
+                    draw_prompt(start_prompt, 151);
+                    draw_prompt("TO", 177);
+                    draw_prompt("EXIT", 200);
                 }
             }
             if (controls_screen && viewport_origin > 0) {
@@ -5780,6 +5943,42 @@ int main(int argc, char** argv) {
                 : std::nullopt;
             presentation_effects.high_res_control_brightness =
                 control_screen_brightness;
+
+            // STARFOX_NATIVE_CONTROLS_UI_MODEL
+            //
+            // Phase 1 remasters controls_type. controls_choice deliberately
+            // remains cartridge-rendered until its TRAINING/GAME selection
+            // receives the same native treatment.
+            // STARFOX_NATIVE_CONTROLS_CHOICE_MODEL_PASS06
+            presentation_effects.native_controls_ui =
+                custom_control_visual_ready
+                && (
+                    game.flow_state()
+                        == starfox::simulation::
+                            GameFlowState::
+                                controls_type
+
+                    || game.flow_state()
+                        == starfox::simulation::
+                            GameFlowState::
+                                controls_choice
+                );
+
+            // STARFOX_NATIVE_CONTROLS_CHOICE_VALUE_PASS06
+            presentation_effects.native_control_type =
+                game.flow_state()
+                    == starfox::simulation::
+                        GameFlowState::
+                            controls_choice
+
+                ? static_cast<std::uint8_t>(
+                    4U
+                    + (
+                        game.controls_choice_selection()
+                        & 1U
+                    ))
+
+                : game.controls_type_selection();
             presentation_effects.circle_left = static_cast<std::int16_t>(
                 24 + viewport_origin);
             presentation_effects.circle_top = 24;
@@ -5797,6 +5996,18 @@ int main(int argc, char** argv) {
                 starfox::app::perf::ScopedTimer
                     perf_timer_present{
                         starfox::app::perf::Bucket::present};
+
+            // STARFOX_NATIVE_TITLE_MODEL_PASS07
+            presentation_effects.native_title_ui =
+                game.flow_state()
+                    == starfox::simulation::
+                        GameFlowState::title;
+
+
+            presentation_effects.native_title_brightness =
+                game.map()
+                    .display_brightness();
+
 
                 window.present(
                     framebuffer,

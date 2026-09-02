@@ -196,6 +196,22 @@ public:
     }
     [[nodiscard]] std::array<std::uint16_t, 16> palette_words() const noexcept;
     [[nodiscard]] GameFlowState flow_state() const noexcept { return flow_state_; }
+
+    // STARFOX_NATIVE_UI_CONTROL_STATE
+    [[nodiscard]]
+    std::uint8_t controls_type_selection() const noexcept {
+        return static_cast<std::uint8_t>(
+            map_.read_native_byte(control_type_)
+            & 3U);
+    }
+
+    [[nodiscard]]
+    std::uint8_t controls_choice_selection() const noexcept {
+        return map_.read_native_byte(controls_exit_)
+            != 0U
+            ? std::uint8_t{1U}
+            : std::uint8_t{};
+    }
     [[nodiscard]] TimingMode timing_mode() const noexcept { return timing_mode_; }
     void set_timing_mode(TimingMode mode) noexcept { timing_mode_ = mode; }
     [[nodiscard]] Experience experience() const noexcept { return experience_; }

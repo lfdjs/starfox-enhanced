@@ -348,14 +348,60 @@ ControlVisualProfile detect_control_visual_profile(SDL_Gamepad* gamepad) noexcep
 #if defined(STARFOX_SWITCH_RUNTIME)
     ControlDetectionInput input{ControlPlatform::switch_console,
         ControlDeviceKind::switch_pro_controller, false};
-    input.handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
+    // STARFOX_SWITCH_PROFILE_ASSIGNMENT_PASS02
+    input.handheld =
+        appletGetOperationMode()
+        == AppletOperationMode_Handheld;
+
+
     if (!input.handheld) {
-        const auto style = hidGetNpadStyleSet(HidNpadIdType_No1);
-        if ((style & HidNpadStyleTag_NpadJoyDual) != 0U) {
-            input.device = ControlDeviceKind::switch_dual_joycon;
-        } else if ((style & (HidNpadStyleTag_NpadJoyLeft
-                            | HidNpadStyleTag_NpadJoyRight)) != 0U) {
-            input.device = ControlDeviceKind::switch_single_joycon;
+
+        const auto style =
+            hidGetNpadStyleSet(
+                HidNpadIdType_No1);
+
+
+        const auto assignment =
+            hidGetNpadJoyAssignment(
+                HidNpadIdType_No1);
+
+
+        const auto single_style =
+            (
+                style
+                & (
+                    HidNpadStyleTag_NpadJoyLeft
+                    | HidNpadStyleTag_NpadJoyRight
+                )
+            ) != 0U;
+
+
+        // Assignment mode is useful during the transition from a
+        // paired set to one horizontal Joy-Con, where style bits
+        // can briefly overlap.
+        if (assignment
+                == HidNpadJoyAssignmentMode_Single
+            && single_style) {
+
+            input.device =
+                ControlDeviceKind::
+                    switch_single_joycon;
+
+        } else if (
+            (
+                style
+                & HidNpadStyleTag_NpadJoyDual
+            ) != 0U) {
+
+            input.device =
+                ControlDeviceKind::
+                    switch_dual_joycon;
+
+        } else if (single_style) {
+
+            input.device =
+                ControlDeviceKind::
+                    switch_single_joycon;
         }
     }
     return detect_control_visual_profile(input);

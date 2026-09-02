@@ -4382,15 +4382,44 @@ GameTickResult GameSimulation::tick(const input::TickInput& input) {
         map_.write_native_byte(controls_exit_, selection);
         if (frontend_phase_ == FrontendPhase::none
             && selection != previous_selection) queue_sound_effect(0x11U);
+        // STARFOX_CONTROLS_CHOICE_INTUITIVE_INPUT_PASS07
+        //
+        // Native remastered frontend:
+        //
+        // X / BOOST -> BACK
+        // Y / FIRE  -> CONFIRM
+        // START     -> CONFIRM
+        //
+        // A/B remain accepted as confirmation for compatibility with the
+        // original cartridge frontend, but only Boost owns the Back action.
+
         if (frontend_phase_ == FrontendPhase::none
-            && (input.pressed & (starfox::input::x | starfox::input::y)) != 0U) {
+            && (input.pressed & starfox::input::x) != 0U) {
+
             flow_ticks_ = 0U;
-            flow_state_ = GameFlowState::controls_type;
-            set_player_control(true);
+
+            flow_state_ =
+                GameFlowState::
+                    controls_type;
+
+            set_player_control(
+                true);
+
             update_control_screen_sprites();
-        } else if (frontend_phase_ == FrontendPhase::none
-                   && (input.pressed & (starfox::input::a | starfox::input::b
-                       | starfox::input::start)) != 0U) {
+
+        } else if (
+            frontend_phase_
+                == FrontendPhase::none
+
+            && (
+                input.pressed
+                & (
+                    starfox::input::y
+                    | starfox::input::a
+                    | starfox::input::b
+                    | starfox::input::start
+                )
+            ) != 0U) {
             queue_sound_effect(0x10U);
             request_music(0xf1U);
             map_.start_display_fade(-1);
