@@ -2667,8 +2667,11 @@ int main(int argc, char** argv) {
 
 #else
 
-        auto active_experience = static_cast<starfox::simulation::Experience>(
-            saved_pregame.experience);
+        // Star Fox EX is not part of the currently configured player-facing
+        // runtime. Keep the production experience fixed to the original game;
+        // the environment override remains available to automated EX tests.
+        auto active_experience =
+            starfox::simulation::Experience::original;
         if (const auto* forced_experience = std::getenv(
                 "STARFOX_TEST_EXPERIENCE")) {
             active_experience = std::string_view{forced_experience} == "EX"
@@ -4072,6 +4075,26 @@ int main(int argc, char** argv) {
                     game.set_ntt_input(remap_menu.active || hud_editor.active
                             ? 0U
                             : sample_ntt_data_pad(keyboard_state));
+                    // Star Fox EX is not exposed by the current runtime build.
+                    // Leave the experience row visible as information, but do
+                    // not forward change/confirm input while it is selected.
+                    // GameSimulation keeps its EX selector for dedicated tests
+                    // and future frontends.
+                    if (game.flow_state()
+                            == starfox::simulation::GameFlowState::pregame_menu
+                        && game.pregame_page()
+                            == starfox::simulation::PregamePage::main
+                        && game.pregame_selection() == 0U) {
+
+                        controls.pressed = static_cast<ButtonMask>(
+                            controls.pressed
+                            & ~(starfox::input::left
+                                | starfox::input::right
+                                | starfox::input::select
+                                | starfox::input::a
+                                | starfox::input::b));
+                    }
+
                     const auto tick_result = game.tick(controls);
                     ++source_logic_frames;
                     // EX commits its option pages to $71:f000 inside RESTART.
